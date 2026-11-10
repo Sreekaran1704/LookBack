@@ -1,25 +1,74 @@
 {
   "expo": {
     "name": "LookBack",
-    "slug": "LookBack",
+    "slug": "yearbook",
     "version": "1.0.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
-    "userInterfaceStyle": "light",
+    "userInterfaceStyle": "automatic",
     "ios": {
-      "supportsTablet": true
+      "supportsTablet": true,
+      "bundleIdentifier": "com.yearbook.app",
+      "infoPlist": {
+        "NSCameraUsageDescription": "LookBack uses the camera so you can save a photo as today’s moment.",
+        "NSPhotoLibraryUsageDescription": "LookBack lets you pick a photo as today’s moment."
+      }
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#FFE9E1",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
       },
-      "predictiveBackGestureEnabled": false
+      "predictiveBackGestureEnabled": false,
+      "allowBackup": false,
+      "package": "com.yearbook.app"
     },
     "web": {
       "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      "expo-sqlite",
+      "expo-font",
+      "@react-native-community/datetimepicker",
+      "expo-image",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "LookBack lets you pick a photo as today’s moment.",
+          "cameraPermission": "LookBack uses the camera so you can save a photo as today’s moment."
+        }
+      ],
+      [
+        "expo-notifications",
+        {
+          "color": "#14213D"
+        }
+      ],
+      [
+        "react-native-nitro-google-signin",
+        {
+          "iosUrlScheme": "com.googleusercontent.apps.REPLACE_WITH_IOS_CLIENT_ID"
+        }
+      ],
+      [
+        "expo-splash-screen",
+        {
+          "image": "./assets/splash-icon.png",
+          "imageWidth": 180,
+          "backgroundColor": "#FBF5E6",
+          "dark": {
+            "image": "./assets/splash-icon.png",
+            "backgroundColor": "#1B1A18"
+          }
+        }
+      ]
+    ],
+    "scheme": "yearbook",
+    "experiments": {
+      "typedRoutes": true
     }
   }
 }
