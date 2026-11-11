@@ -11,10 +11,10 @@ const BLEED = 28;
  * Only for content that sits still: anything animating inside would re-draw the texture every frame.
  */
 export function Raster({ children, style, enabled = true }: { children: ReactNode; style?: StyleProp<ViewStyle>; enabled?: boolean }) {
-  if (!enabled) return <>{children}</>;
+  // The same view either way (only the texture flag changes), so turning it on and off never rebuilds what's inside.
   return (
     // collapsable={false}: a view with only layout styles is otherwise flattened away, and the texture with it.
-    <View collapsable={false} renderToHardwareTextureAndroid shouldRasterizeIOS style={[{ margin: -BLEED, padding: BLEED }, style]}>
+    <View collapsable={false} renderToHardwareTextureAndroid={enabled} shouldRasterizeIOS={enabled} style={[{ margin: -BLEED, padding: BLEED }, style]}>
       {children}
     </View>
   );

@@ -266,7 +266,7 @@ export function Intro({ entries, today, onDone }: Props) {
                 textBreakStrategy="simple"
                 style={[typography.title, { color: colors.ink }]}
               >
-                LookBack
+                LookBack{' '}
               </Text>
             </View>
             <WashiTape

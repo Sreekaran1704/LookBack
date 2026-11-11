@@ -1,5 +1,5 @@
 import { memo, useEffect, useMemo } from 'react';
-import { Pressable, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
   useReducedMotion,
@@ -56,8 +56,18 @@ interface Props {
   /** Cache the drawn object as a texture (default). Turn off for crowds, where the textures would cost too much memory. */
   raster?: boolean;
   onPress?: () => void;
+  /** Make the tape (or clip/pin) and the sticker tappable, e.g. to pick another one on the writing page. A missing sticker shows a dashed spot to tap. */
+  onPressTape?: () => void;
+  onPressSticker?: () => void;
   style?: StyleProp<ViewStyle>;
 }
+
+/** A note stuck to a photo: its width (share of the photo), how far it overlaps the photo and hangs out past its side. */
+const PHOTO_NOTE_RATIO = 0.72;
+const PHOTO_NOTE_OVERLAP = 0.16;
+const PHOTO_NOTE_OUT = 0.12;
+const PHOTO_NOTE_TILT = 3;
+const PHOTO_NOTE_LINES = 4;
 
 /** An entry as a physical scrapbook object, with its fastener and sticker. */
 export const ScrapObject = memo(function ScrapObject({
@@ -73,6 +83,8 @@ export const ScrapObject = memo(function ScrapObject({
   tapeFlicker = false,
   raster = true,
   onPress,
+  onPressTape,
+  onPressSticker,
   style,
 }: Props) {
   const theme = useTheme();
@@ -107,7 +119,9 @@ export const ScrapObject = memo(function ScrapObject({
   const uri = photoUri !== undefined ? photoUri : entry.photoPath ? resolvePhotoUri(entry.photoPath) : null;
   const notePapers = [colors.paper, colors.paperWhite, colors.blush, palette.tint];
   const notePaper = notePapers[Math.floor(look.sizeJitter * notePapers.length)] ?? colors.paper;
-  const caption = firstLine(entry.text, 28) || formatDisplayDate(entry.localDate);
+  // A photo with words: the words go on a little note stuck to the photo; the polaroid keeps the date.
+  const photoNote = uri !== null && entry.text.trim().length > 0 && (look.objectType === 'polaroid' || look.objectType === 'tapedPhoto');
+  const caption = photoNote ? formatDisplayDate(entry.localDate) : firstLine(entry.text, 28) || formatDisplayDate(entry.localDate);
 
   let body: React.ReactNode;
   switch (look.objectType) {
@@ -191,14 +205,62 @@ export const ScrapObject = memo(function ScrapObject({
   };
   const showSticker = look.sticker !== null;
 
+  // The note hangs off the lower right of the photo, turned the other way, held by a small strip of tape.
+  const noteW = width * PHOTO_NOTE_RATIO;
+  const attached = photoNote ? (
+    <View pointerEvents="none" style={{ alignSelf: 'flex-end', width: noteW, marginTop: -width * PHOTO_NOTE_OVERLAP, marginRight: -width * PHOTO_NOTE_OUT, transform: [{ rotate: deg(-look.tilt * 1.5 + PHOTO_NOTE_TILT) }] }}>
+      <TornNote width={noteW} text={entry.text.trim()} paper={notePaper === colors.paperWhite ? colors.paper : notePaper} tint={palette.primary} seed={look.pathSeed + 7} ruled numberOfLines={numberOfLines ?? PHOTO_NOTE_LINES} lift={lift * 0.8} />
+      <WashiTape
+        width={noteW * 0.4}
+        color={tapePalette.primary}
+        color2={tapePalette.secondary}
+        pattern={look.tapePattern}
+        angle={-look.tapeAngle - 10}
+        style={{ position: 'absolute', top: -sizes.tapeHeight / 2, left: noteW * 0.08 }}
+      />
+    </View>
+  ) : null;
+
   const drawn = (
     <Animated.View style={[{ width, transform: [{ rotate: deg(look.tilt) }] }, liftStyle]}>
       {body}
+      {attached}
       {fastener}
       {showSticker && look.sticker ? (
         <Animated.View style={[stickerPos, stickerStyle]} pointerEvents="none">
           <Sticker kind={look.sticker} color={stickerPalette.primary} color2={stickerPalette.secondary} style={{ transform: [{ rotate: deg(look.stickerTilt) }] }} />
         </Animated.View>
+      ) : null}
+      {/* Tap targets over the tape and the sticker (the writing page's live preview). */}
+      {onPressTape ? (
+        <Pressable
+          onPress={() => {
+            tapHaptic();
+            onPressTape();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Change the tape"
+          hitSlop={sizes.hitSlop}
+          style={{ position: 'absolute', top: -sizes.tapeHeight, left: (width - tapeWidth) / 2 - sizes.hitSlop, width: tapeWidth + sizes.hitSlop * 2, height: sizes.tapeHeight * 2 }}
+        />
+      ) : null}
+      {onPressSticker ? (
+        <Pressable
+          onPress={() => {
+            tapHaptic();
+            onPressSticker();
+          }}
+          accessibilityRole="button"
+          accessibilityLabel={showSticker ? 'Change the sticker' : 'Add a sticker'}
+          hitSlop={sizes.hitSlop}
+          style={[stickerPos, { width: sizes.sticker, height: sizes.sticker, alignItems: 'center', justifyContent: 'center' }]}
+        >
+          {showSticker ? null : (
+            <View style={{ width: sizes.sticker, height: sizes.sticker, borderRadius: sizes.sticker / 2, borderWidth: 2, borderStyle: 'dashed', borderColor: stickerPalette.primary, backgroundColor: colors.paperWhite, alignItems: 'center', justifyContent: 'center' }}>
+              <Text style={[theme.typography.label, { color: stickerPalette.primary, paddingRight: 0 }]}>+</Text>
+            </View>
+          )}
+        </Pressable>
       ) : null}
       {stamp ? (
         <DateStamp

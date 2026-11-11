@@ -19,6 +19,7 @@ describe('planReminders', () => {
     expect(plan[0]?.body).toBe('One year ago today: Coffee with Sam');
     expect(plan[0]?.fireAt).toEqual(new Date(2026, 10, 9, 9, 30));
     expect(plan[0]?.identifier).toBe('memory-2026-11-09');
+    expect(plan[0]?.title).toBe('💌 A little letter from 2025');
   });
 
   test('skips today when the reminder time has already passed', () => {
@@ -46,8 +47,9 @@ describe('planReminders', () => {
       [entry('2023-11-10', 'old'), entry('2024-11-10', 'newer')],
       { today: '2026-11-09', now, hour: 9, minute: 0 },
     );
-    expect(plan[0]?.title).toBe('2 memories from today');
-    expect(plan[0]?.body).toBe('2 years ago today: newer');
+    expect(plan[0]?.title).toBe('💌 2 little letters from your past self');
+    expect(plan[0]?.body).toBe('2 years ago today: newer · and 1 more 🐰');
+    expect(plan[0]?.year).toBe(2024);
   });
 
   test('photo-only entry gets a friendly fallback line', () => {
@@ -57,7 +59,8 @@ describe('planReminders', () => {
       hour: 9,
       minute: 0,
     });
-    expect(plan[0]?.body).toBe('One year ago today: A photo you saved');
+    expect(plan[0]?.body).toBe('One year ago today: a photo you saved 📷');
+    expect(plan[0]?.photoPath).toBe('photos/a.jpg');
   });
 
   test('Feb 29 entry is planned for Feb 28 in a non-leap year', () => {

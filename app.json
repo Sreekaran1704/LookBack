@@ -44,7 +44,12 @@
       [
         "expo-notifications",
         {
-          "color": "#14213D"
+          "icon": "./assets/notification-icon.png",
+          "largeIcon": "./assets/notification-large.png",
+          "color": "#FF6B5E",
+          "sounds": [
+            "./assets/sounds/chime.wav"
+          ]
         }
       ],
       [
@@ -64,7 +69,63 @@
             "backgroundColor": "#1B1A18"
           }
         }
-      ]
+      ],
+      [
+        "expo-alternate-app-icons",
+        [
+          {
+            "name": "Waiting",
+            "ios": "./assets/icon-waiting.png",
+            "android": {
+              "foregroundImage": "./assets/android-icon-waiting-foreground.png",
+              "backgroundColor": "#FFE9E1",
+              "monochromeImage": "./assets/android-icon-monochrome.png"
+            }
+          },
+          {
+            "name": "Missed",
+            "ios": "./assets/icon-missed.png",
+            "android": {
+              "foregroundImage": "./assets/android-icon-missed-foreground.png",
+              "backgroundColor": "#FFE9E1",
+              "monochromeImage": "./assets/android-icon-monochrome.png"
+            }
+          },
+          {
+            "name": "Gone",
+            "ios": "./assets/icon-gone.png",
+            "android": {
+              "foregroundImage": "./assets/android-icon-gone-foreground.png",
+              "backgroundColor": "#FFE9E1",
+              "monochromeImage": "./assets/android-icon-monochrome.png"
+            }
+          }
+        ]
+      ],
+      [
+        "react-native-android-widget",
+        {
+          "fonts": [
+            "./node_modules/@expo-google-fonts/caveat/700Bold/Caveat_700Bold.ttf",
+            "./node_modules/@expo-google-fonts/caveat/600SemiBold/Caveat_600SemiBold.ttf"
+          ],
+          "widgets": [
+            {
+              "name": "Today",
+              "label": "LookBack · today",
+              "description": "Today's page: add a memory in one tap, or see the one you saved.",
+              "minWidth": "250dp",
+              "minHeight": "110dp",
+              "targetCellWidth": 4,
+              "targetCellHeight": 2,
+              "previewImage": "./assets/widget-preview.png",
+              "updatePeriodMillis": 1800000,
+              "resizeMode": "horizontal|vertical"
+            }
+          ]
+        }
+      ],
+      "./plugins/withHighRefreshRate"
     ],
     "scheme": "yearbook",
     "experiments": {

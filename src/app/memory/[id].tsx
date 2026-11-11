@@ -2,7 +2,8 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { CircleButton, PillButton } from '../../components/Buttons';
-import { TopBar } from '../../components/Screen';
+import { useNavBarSpace } from '../../components/NavBar';
+import { HAND_TAIL, TopBar } from '../../components/Screen';
 import { BuddySays } from '../../components/scrapbook/Buddy';
 import { DropIn } from '../../components/scrapbook/DropIn';
 import { PaperBackground } from '../../components/scrapbook/PaperBackground';
@@ -19,6 +20,7 @@ export default function MemoryScreen() {
   const { width } = useWindowDimensions();
   const today = useToday();
   const { data: entry } = useEntry(id);
+  const navSpace = useNavBarSpace();
 
   const palette = theme.year(parseLocalDate(entry?.localDate ?? today).year);
   const isToday = entry?.localDate === today;
@@ -27,11 +29,11 @@ export default function MemoryScreen() {
 
   return (
     <View style={{ flex: 1 }}>
-      <PaperBackground variant="dots" desk wash={palette.tint} />
+      <PaperBackground variant="dots" desk />
       <ScrollView
         contentContainerStyle={{
           paddingTop: insets.top + spacing.md,
-          paddingBottom: insets.bottom + spacing.xxxl * 2,
+          paddingBottom: navSpace,
           paddingHorizontal: spacing.gutter,
           gap: spacing.xl,
         }}
@@ -44,7 +46,10 @@ export default function MemoryScreen() {
           <BuddySays mood="sleepy" accent={palette.primary} text="This memory isn't here anymore." />
         ) : entry ? (
           <>
-            <Text style={[typography.headline, { color: colors.onDesk }]}>{kicker}</Text>
+            <Text style={[typography.headline, { color: colors.onDesk }]}>
+              {kicker}
+              {HAND_TAIL}
+            </Text>
             <DropIn index={0} style={{ alignItems: 'center', paddingVertical: spacing.xl }}>
               <ScrapObject entry={entry} width={width * sizes.detailWidthRatio} stamp lift={1.6} sway />
             </DropIn>

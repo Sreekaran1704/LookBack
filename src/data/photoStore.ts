@@ -1,5 +1,6 @@
 import * as Crypto from 'expo-crypto';
 import { Directory, File, Paths } from 'expo-file-system';
+import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 
 const PHOTO_DIR = 'photos';
 
@@ -15,15 +16,35 @@ function extensionOf(uri: string): string {
   return (match?.[1] ?? 'jpg').toLowerCase();
 }
 
+/** Longest side a saved photo keeps. Plenty for a full-screen view on any phone, and quick to decode. */
+const MAX_PHOTO_PX = 1600;
+const PHOTO_QUALITY = 0.82;
+
 /**
- * Copies a picked or captured photo into the app's document directory so it survives
- * changes to the photo library or cache clears. Returns the path relative to the
- * document directory, which is what gets stored in the database.
+ * Copies a picked or captured photo into the app's document directory so it survives changes to the
+ * photo library or cache clears. Camera photos are often 4000 px or more; every polaroid decoding one
+ * of those to show it a few hundred pixels wide is what made photo-heavy pages stutter, so the photo
+ * is shrunk to MAX_PHOTO_PX once, here, and saved as a JPEG (a fraction of the size, also in backups).
+ * Returns the path relative to the document directory, which is what gets stored in the database.
  */
 export async function importPhoto(sourceUri: string): Promise<string> {
-  const name = `${Crypto.randomUUID()}.${extensionOf(sourceUri)}`;
+  const name = `${Crypto.randomUUID()}.jpg`;
   const destination = new File(photosDirectory(), name);
-  await new File(sourceUri).copy(destination);
+  try {
+    const original = await ImageManipulator.manipulate(sourceUri).renderAsync();
+    const longest = Math.max(original.width, original.height);
+    const context = ImageManipulator.manipulate(sourceUri);
+    if (longest > MAX_PHOTO_PX) context.resize(original.width >= original.height ? { width: MAX_PHOTO_PX } : { height: MAX_PHOTO_PX });
+    const image = await context.renderAsync();
+    const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: PHOTO_QUALITY });
+    await new File(saved.uri).move(destination);
+  } catch (error) {
+    // Can't read it as an image here (an unusual format): keep the original as it is.
+    console.warn('[photoStore] Could not shrink photo, keeping the original', error);
+    const fallback = new File(photosDirectory(), `${Crypto.randomUUID()}.${extensionOf(sourceUri)}`);
+    await new File(sourceUri).copy(fallback);
+    return `${PHOTO_DIR}/${fallback.name}`;
+  }
   return `${PHOTO_DIR}/${name}`;
 }
 

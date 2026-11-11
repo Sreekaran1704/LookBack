@@ -51,21 +51,31 @@ interface PillButtonProps {
   onPress?: () => void;
   disabled?: boolean;
   accessibilityLabel?: string;
+  /** A sticker pill: this color with white text and a white die-cut edge (overrides `tone`). */
+  color?: string;
+  /** Share a row equally with the buttons next to it. */
+  grow?: boolean;
+  /** With `color`: a quiet sticker, white with a colored edge and colored text (for cautious actions). */
+  outline?: boolean;
 }
 
 /**
  * Pill: paper by default, `dark` (ink) for the main action, amber for reminder status, green for saved.
  * Without onPress it's a static badge.
  */
-export function PillButton({ label, icon, tone = 'paper', large = false, onPress, disabled, accessibilityLabel }: PillButtonProps) {
+export function PillButton({ label, icon, tone = 'paper', large = false, onPress, disabled, accessibilityLabel, color, grow = false, outline = false }: PillButtonProps) {
   const theme = useTheme();
   const { colors, sizes, spacing, radii, typography } = theme;
-  const palette = {
-    paper: { bg: colors.control, fg: colors.ink },
-    dark: { bg: colors.primary, fg: colors.onPrimary },
-    amber: { bg: colors.amber, fg: colors.onAmber },
-    green: { bg: colors.green, fg: colors.onGreen },
-  }[tone];
+  const palette = color
+    ? outline
+      ? { bg: colors.paperWhite, fg: color }
+      : { bg: color, fg: colors.paperWhite }
+    : {
+        paper: { bg: colors.control, fg: colors.ink },
+        dark: { bg: colors.primary, fg: colors.onPrimary },
+        amber: { bg: colors.amber, fg: colors.onAmber },
+        green: { bg: colors.green, fg: colors.onGreen },
+      }[tone];
 
   const content = (
     <>
@@ -84,9 +94,10 @@ export function PillButton({ label, icon, tone = 'paper', large = false, onPress
       gap: spacing.sm,
       borderRadius: radii.pill,
       backgroundColor: palette.bg,
-      boxShadow: theme.shadow(tone === 'paper' || tone === 'dark' ? undefined : palette.bg, 0.8),
+      boxShadow: theme.shadow(color ?? (tone === 'paper' || tone === 'dark' ? undefined : palette.bg), 0.8),
     },
-    large ? styles.stretch : styles.hug,
+    color ? { borderWidth: outline ? 2 : 3, borderColor: outline ? color : colors.paperWhite, borderStyle: outline ? ('dashed' as const) : ('solid' as const) } : null,
+    grow ? styles.grow : large ? styles.stretch : styles.hug,
   ];
 
   if (!onPress) {
@@ -108,4 +119,5 @@ const styles = StyleSheet.create({
   pill: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   hug: { alignSelf: 'flex-start' },
   stretch: { alignSelf: 'stretch' },
+  grow: { flex: 1, paddingHorizontal: 12 },
 });

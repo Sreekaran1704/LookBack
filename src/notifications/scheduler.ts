@@ -1,11 +1,21 @@
 import * as Notifications from 'expo-notifications';
 import { AndroidImportance } from 'expo-notifications';
 import { Platform } from 'react-native';
-import { entriesRepository, settingsRepository } from '../data';
+import { entriesRepository, resolvePhotoUri, settingsRepository } from '../data';
 import { onThisDay, toLocalDate } from '../lib/dates';
+import { yearPalette } from '../theme/yearColors';
 import { describeMemories, planReminders } from './planner';
 
-const CHANNEL_ID = 'memories';
+/**
+ * Android channels can't change their sound once created, so the chime gets a new channel id; the
+ * old silent one is removed.
+ */
+const CHANNEL_ID = 'memories-chime';
+const OLD_CHANNEL_IDS = ['memories'];
+/** A soft three-note music box (assets/sounds/chime.wav, bundled by the expo-notifications plugin). */
+const CHIME = 'chime.wav';
+/** A gentle double tap rather than a buzz. */
+const VIBRATION = [0, 40, 90, 40];
 const MEMORY_KIND = 'memory';
 const TEST_DELAY_SECONDS = 3;
 
@@ -25,15 +35,22 @@ export async function configureNotifications(): Promise<void> {
       handleNotification: async () => ({
         shouldShowBanner: true,
         shouldShowList: true,
-        shouldPlaySound: false,
+        // A letter from your past self chimes even with the app open (it's at most once a day).
+        shouldPlaySound: true,
         shouldSetBadge: false,
       }),
     });
     if (Platform.OS === 'android') {
       await Notifications.setNotificationChannelAsync(CHANNEL_ID, {
-        name: 'Daily memories',
+        name: 'Letters from your past self',
+        description: 'A little note on days you saved a memory, a year (or more) ago.',
         importance: AndroidImportance.DEFAULT,
+        sound: CHIME,
+        vibrationPattern: VIBRATION,
+        enableVibrate: true,
+        lightColor: yearPalette(2025).primary,
       });
+      await Promise.all(OLD_CHANNEL_IDS.map((id) => Notifications.deleteNotificationChannelAsync(id).catch(() => undefined)));
       channelReady = true;
     }
   } catch (error) {
@@ -65,6 +82,28 @@ async function cancelMemoryNotifications(): Promise<void> {
   );
 }
 
+/**
+ * What a memory notification looks like: the bunny (large icon and status-bar icon come from the
+ * expo-notifications plugin in app.json), tinted with the memory's year color, the chime, and on
+ * iOS the memory's photo as a thumbnail.
+ */
+function memoryContent(
+  item: { title: string; body: string; year: number; photoPath: string | null },
+  data: Record<string, string>,
+): Notifications.NotificationContentInput {
+  return {
+    title: item.title,
+    body: item.body,
+    data,
+    color: yearPalette(item.year).primary,
+    sound: CHIME,
+    vibrate: VIBRATION,
+    ...(Platform.OS === 'ios' && item.photoPath
+      ? { attachments: [{ identifier: 'photo', url: resolvePhotoUri(item.photoPath), type: null, typeHint: 'public.jpeg' }] }
+      : null),
+  };
+}
+
 let queue: Promise<number> = Promise.resolve(0);
 
 /**
@@ -88,11 +127,7 @@ export function refreshReminders(): Promise<number> {
     for (const item of plan) {
       await Notifications.scheduleNotificationAsync({
         identifier: item.identifier,
-        content: {
-          title: item.title,
-          body: item.body,
-          data: { kind: MEMORY_KIND, localDate: item.localDate },
-        },
+        content: memoryContent(item, { kind: MEMORY_KIND, localDate: item.localDate }),
         trigger: {
           type: Notifications.SchedulableTriggerInputTypes.DATE,
           date: item.fireAt,
@@ -112,9 +147,14 @@ export async function sendTestNotification(): Promise<boolean> {
   const matches = onThisDay(await entriesRepository.getAll(), today);
   const content = matches.length
     ? describeMemories(matches, today)
-    : { title: 'LookBack', body: 'One year ago today: (no memory for today — seed sample data first)' };
+    : {
+        title: '💌 A little letter from your past self',
+        body: 'One year ago today: (no memory for today yet — seed sample data first) 🐰',
+        year: new Date().getFullYear() - 1,
+        photoPath: null,
+      };
   await Notifications.scheduleNotificationAsync({
-    content: { ...content, data: { kind: 'test', localDate: today } },
+    content: memoryContent(content, { kind: 'test', localDate: today }),
     trigger: {
       type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL,
       seconds: TEST_DELAY_SECONDS,

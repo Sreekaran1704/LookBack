@@ -265,6 +265,11 @@ export const sizes = {
   stickerTray: 44,
   swatch: 46,
   checkbox: 26,
+  /** The paper navigation strip at the foot of each page, and its raised middle button. */
+  navBar: 72,
+  navCenter: 62,
+  /** A paper-color chip on the first-run and Settings pages. */
+  paperChip: 64,
 } as const;
 
 /**
@@ -276,6 +281,7 @@ const hand = (size: number, lineHeight: number, family = 'Caveat_600SemiBold', l
   lineHeight,
   letterSpacing,
   // Caveat's glyphs overhang their measured box on Android; without this the last letter gets clipped.
+  // (Android clips text inside its padding, so big headings also get a trailing space: see HAND_TAIL.)
   paddingRight: Math.ceil(size * 0.15),
 });
 const BOLD = 'Caveat_700Bold';
@@ -353,6 +359,8 @@ export const motion = {
   bookFlight: { pullMs: 220, travelMs: 560, turnMs: 360, openMs: 420, burstMs: 700, settleMs: 160, readyFallbackMs: 600, diveMs: 460 },
   /** Push / pop between screens. */
   screenMs: 280,
+  /** Cross-fade between the bar's pages (Home, Years, Settings). */
+  tabFadeMs: 160,
   buddyBobMs: 1900,
   buddyBobPx: 3,
   confettiMs: 1300,

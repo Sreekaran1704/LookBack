@@ -3,11 +3,17 @@ import { StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent, ty
 import { seededRng, STICKERS, TAPE_PATTERNS } from '../lib/seeded';
 import { useTheme } from '../theme';
 import { Doodle } from './scrapbook/Doodle';
+import { Raster } from './scrapbook/Raster';
 import { deg } from './scrapbook/shared';
 import { Sticker } from './scrapbook/Sticker';
 import { WashiTape } from './scrapbook/WashiTape';
 
 const COUNT_CIRCLE_PAD = 14;
+/**
+ * Android draws text clipped just inside its padding, and Caveat's last letter leans past the box
+ * ("da|y", "Toda|y" lost the top of the y). A trailing space gives the last glyph room inside the clip.
+ */
+export const HAND_TAIL = ' ';
 
 /**
  * Big handwritten title with a highlighter swipe behind it, and an optional count circled in pen:
@@ -44,6 +50,7 @@ export function ScreenTitle({ title, count, accent }: { title: string; count?: n
           textBreakStrategy="simple"
         >
           {title}
+          {HAND_TAIL}
         </Text>
       </View>
       {count !== undefined ? (
@@ -87,6 +94,7 @@ export function SectionHeader({ title, detail, accent }: { title: string; detail
           style={[typography.heading, { color: colors.onDesk }]}
         >
           {title}
+          {HAND_TAIL}
         </Text>
         {w > 0 ? <Doodle kind="underline" width={w} height={spacing.md} color={accent ?? colors.amber} seed={title.length} /> : null}
       </View>
@@ -148,6 +156,9 @@ export function Panel({ children, seed = 'panel', accent, accent2, paper, sticke
   const tapeW = Math.max(w * 0.28, sizes.tapeHeight * 3);
 
   return (
+    // Kept as a texture: the card's blurred shadow, tape and sticker are painted once, not on every frame
+    // (Settings took 16 ms of GPU a frame while its bunny bobbed). It re-renders when the card's content changes.
+    <Raster>
     <View
       onLayout={(e) => setW(e.nativeEvent.layout.width)}
       style={[
@@ -184,6 +195,7 @@ export function Panel({ children, seed = 'panel', accent, accent2, paper, sticke
         />
       ) : null}
     </View>
+    </Raster>
   );
 }
 

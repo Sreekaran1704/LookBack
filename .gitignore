@@ -30,8 +30,10 @@ yarn-error.*
 .DS_Store
 *.pem
 
-# local env files
+# local env files (keep values out of the repo; .env.example shows what's needed)
+.env
 .env*.local
+!.env.example
 
 # typescript
 *.tsbuildinfo
@@ -39,3 +41,9 @@ yarn-error.*
 # generated native folders
 /ios
 /android
+
+# Private: kept on this machine, not published
+.claude/
+CLAUDE.md
+__tests__/
+screenshots/

@@ -1,7 +1,7 @@
 {
   "name": "yearbook",
   "version": "1.0.0",
-  "main": "expo-router/entry",
+  "main": "index.ts",
   "dependencies": {
     "@expo-google-fonts/caveat": "^0.4.2",
     "@expo-google-fonts/fredoka": "^0.4.1",
@@ -10,6 +10,7 @@
     "@react-native-community/datetimepicker": "9.2.1",
     "@shopify/react-native-skia": "2.14.0",
     "expo": "~58.0.23",
+    "expo-alternate-app-icons": "^11.0.0",
     "expo-blur": "~58.0.5",
     "expo-constants": "~58.0.15",
     "expo-crypto": "~58.0.7",
@@ -17,6 +18,7 @@
     "expo-font": "~58.0.11",
     "expo-haptics": "~58.0.7",
     "expo-image": "~58.0.18",
+    "expo-image-manipulator": "~58.0.16",
     "expo-image-picker": "~58.0.10",
     "expo-linking": "~58.0.16",
     "expo-notifications": "~58.1.8",
@@ -28,6 +30,8 @@
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "react-native": "0.88.1",
+    "react-native-android-widget": "^0.26.0",
+    "react-native-gesture-handler": "~3.3.0",
     "react-native-nitro-google-signin": "^2.3.1",
     "react-native-nitro-modules": "^0.37.2",
     "react-native-reanimated": "4.7.1",

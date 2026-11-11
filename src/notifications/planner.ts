@@ -2,6 +2,7 @@ import {
   addDays,
   atLocalTime,
   onThisDay,
+  parseLocalDate,
   yearsAgoLabel,
   yearsBetween,
   type LocalDate,
@@ -23,6 +24,10 @@ export interface PlannedNotification {
   localDate: LocalDate;
   title: string;
   body: string;
+  /** Year of the newest memory (its color tints the notification). */
+  year: number;
+  /** The newest memory's photo, if it has one (shown in the notification where the platform allows). */
+  photoPath: string | null;
 }
 
 export function firstLine(text: string, max = MAX_FIRST_LINE): string {
@@ -30,17 +35,25 @@ export function firstLine(text: string, max = MAX_FIRST_LINE): string {
   return line.length > max ? `${line.slice(0, max - 1).trimEnd()}…` : line;
 }
 
-/** Notification text for a day with at least one matching memory. */
+/**
+ * Notification text for a day with at least one matching memory, written as a little letter from
+ * your past self:
+ *   "💌 A little letter from 2025" / "One year ago today: Coffee with Sam"
+ *   "💌 3 little letters from your past self" / "One year ago today: Coffee with Sam · and 2 more 🐰"
+ */
 export function describeMemories(
   matches: readonly PlannableEntry[],
   day: LocalDate,
-): { title: string; body: string } {
+): { title: string; body: string; year: number; photoPath: string | null } {
   const newest = matches[0];
   if (!newest) throw new Error('describeMemories needs at least one entry');
+  const year = parseLocalDate(newest.localDate).year;
   const lead = yearsAgoLabel(yearsBetween(newest.localDate, day));
-  const line = firstLine(newest.text) || (newest.photoPath ? 'A photo you saved' : 'A moment you saved');
-  const title = matches.length > 1 ? `${matches.length} memories from today` : 'LookBack';
-  return { title, body: `${lead}: ${line}` };
+  const line = firstLine(newest.text) || (newest.photoPath ? 'a photo you saved 📷' : 'a moment you saved');
+  const more = matches.length - 1;
+  const title = more > 0 ? `💌 ${matches.length} little letters from your past self` : `💌 A little letter from ${year}`;
+  const body = more > 0 ? `${lead}: ${line} · and ${more} more 🐰` : `${lead}: ${line}`;
+  return { title, body, year, photoPath: newest.photoPath };
 }
 
 /**

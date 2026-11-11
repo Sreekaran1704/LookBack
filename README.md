@@ -93,10 +93,9 @@ src/lib/seeded.ts   seeded per-entry look (object type, tilt, tape, sticker)
 src/notifications/  planner.ts (pure, tested) + scheduler.ts (expo-notifications)
 src/theme/          design tokens + per-year colors (paper, ink, glow, type, motion)
 src/dev/seed.ts     dev-only sample data
-__tests__/          date, planner, seeded-look and year-color tests
 ```
 
-Project rules for contributors and AI assistants live in [CLAUDE.md](CLAUDE.md).
+Copy `.env.example` to `.env` and fill in the Google client id to switch on Drive backup.
 
 ## Known limits
 

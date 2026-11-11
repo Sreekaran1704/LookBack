@@ -83,7 +83,59 @@ const BOW = svg('M61 33.5 L 53.5 28.8 Q 52.2 33.5 53.5 38.2 Z M61 33.5 L 68.5 28
 const ZZZ = svg('M82 22 L 89 22 L 82 29 L 89 29 M91 10 L 96 10 L 91 15 L 96 15');
 const FUR = [C.white, C.fur, C.shade];
 const MOUTH = '#C65B70';
+const TEAR = '#7CC4F2';
+const MOUTH_DEEP = '#7A2E3E';
+/** A trembling frown. */
+const WOBBLE = svg('M45 69.4 Q 46.4 66.4 48 68 Q 50 66.2 52 68 Q 53.6 66.4 55 69.4');
+const LITTLE_O = svg('M48.2 66.2 Q 50 70.4 51.8 66.2 Q 50 65.2 48.2 66.2 Z');
+const WAIL_MOUTH = svg('M43.6 72.6 Q 50 62.4 56.4 72.6 Q 56 76.4 50 76.2 Q 44 76.4 43.6 72.6 Z');
 const ZZZ_INK = '#9C8B7A';
+
+const IRIS = '#5A3826';
+const IRIS_DEEP = '#22140E';
+
+/**
+ * Open eyes, in one of a few styles (picked by EYES):
+ *  'oval'   the first bunny: tall dark ovals with a dot of light.
+ *  'glossy' big round eyes with a warm brown iris, a large highlight and a small sparkle, set a bit lower and closer.
+ *  'bead'   small shiny bead eyes set wide apart, like a plush toy.
+ */
+function drawEyes(canvas, style, size = 1) {
+  if (style === 'oval') {
+    for (const x of [37, 55.4]) {
+      oval(canvas, x, 53.4, 7.6, 9, paint({ hex: C.face }));
+      canvas.drawCircle(x + 2.5, 56, 1.9, paint({ hex: C.white }));
+      canvas.drawCircle(x + 5.2, 60, 0.9, paint({ hex: C.white, alpha: 0.8 }));
+    }
+    return;
+  }
+  if (style === 'bead') {
+    for (const cx of [38.6, 61.4]) {
+      canvas.drawCircle(cx, 59, 3.1, paint({ hex: C.face }));
+      canvas.drawCircle(cx - 1, 57.9, 1.05, paint({ hex: C.white }));
+    }
+    return;
+  }
+  // glossy
+  for (const cx of [40.2, 59.8]) {
+    const cy = 58.6;
+    const r = 4.5 * size;
+    canvas.drawCircle(cx, cy, r + 0.45, paint({ hex: IRIS_DEEP }));
+    const iris = paint();
+    iris.setShader(CK.Shader.MakeRadialGradient([cx, cy + 1.6], r, [color('#8A5A3C'), color(IRIS), color(IRIS_DEEP)], [0, 0.55, 1], CK.TileMode.Clamp));
+    canvas.drawCircle(cx, cy, r, iris);
+    canvas.drawCircle(cx, cy - 0.3, r * 0.48, paint({ hex: IRIS_DEEP, alpha: 0.85 }));
+    oval(canvas, cx - 3.1 * size, cy - 3.6 * size, 3.6 * size, 3.1 * size, paint({ hex: C.white }));
+    canvas.drawCircle(cx + 1.9 * size, cy + 2 * size, 0.95 * size, paint({ hex: C.white, alpha: 0.9 }));
+    // Bigger eyes are pleading: a second, wetter glint.
+    if (size > 1) canvas.drawCircle(cx - 2 * size, cy + 1.6 * size, 0.7 * size, paint({ hex: C.white, alpha: 0.7 }));
+    // A soft line of light along the lower lid.
+    canvas.drawPath(svg(`M ${cx - 2.6} ${cy + 3.4} Q ${cx} ${cy + 4.6} ${cx + 2.6} ${cy + 3.4}`), paint({ hex: C.white, alpha: 0.35, stroke: 0.6 }));
+  }
+}
+
+/** The eye style the app uses. */
+const EYES = process.env.EYES ?? 'glossy';
 
 /** The bow on its own, in its place on the 100-unit box. In the app it is tinted with the year's color. */
 function drawBow(canvas, hex) {
@@ -98,13 +150,22 @@ function drawBow(canvas, hex) {
  * bow: a color, or null to leave it out (the app overlays a tinted bow).
  * mono: one-color silhouette with the face punched out (Android themed icon).
  */
-function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false } = {}) {
+function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes = EYES } = {}) {
   const waving = mood === 'wave';
   const cheering = mood === 'cheer';
   const sleeping = mood === 'sleepy';
   const peek = mood === 'peek';
-  const earL = sleeping ? -68 : cheering ? -16 : -9;
-  const earR = sleeping ? 68 : waving ? 24 : cheering ? 16 : 9;
+  // The app icon's moods while today's page stays empty, getting more dramatic (like a pet that misses you):
+  // 'plead' huge sparkly puppy eyes and clasped paws, 'cry' tears streaming down, 'wail' sobbing with
+  // tear fountains into a puddle.
+  const pleading = mood === 'plead';
+  const crying = mood === 'cry';
+  const wailing = mood === 'wail';
+  const sad = crying || wailing;
+  // Clasped paws in front replace the arms at the sides; wailing throws both arms up.
+  const sideArms = !peek && !pleading;
+  const earL = sleeping || sad ? -68 : pleading ? -38 : cheering ? -16 : -9;
+  const earR = sleeping || sad ? 68 : pleading ? 38 : waving ? 24 : cheering ? 16 : 9;
 
   const silhouette = (p) => {
     if (!peek) {
@@ -114,11 +175,11 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false } = {})
     }
     rotated(canvas, earL, 38, 38, () => oval(canvas, 30, 3, 15, 38, p));
     rotated(canvas, earR, 62, 38, () => oval(canvas, 55, 3, 15, 38, p));
-    if (cheering) rotated(canvas, -28, 15, 43, () => oval(canvas, 9, 33, 12, 20, p));
-    else if (!peek) rotated(canvas, 16, 17, 65.5, () => oval(canvas, 11, 56, 12, 19, p));
+    if (cheering || wailing) rotated(canvas, -28, 15, 43, () => oval(canvas, 9, 33, 12, 20, p));
+    else if (sideArms) rotated(canvas, 16, 17, 65.5, () => oval(canvas, 11, 56, 12, 19, p));
     canvas.drawPath(BODY, p);
-    if (waving || cheering) rotated(canvas, 28, 85, 43, () => oval(canvas, 79, 33, 12, 20, p));
-    else if (!peek) rotated(canvas, -16, 83, 65.5, () => oval(canvas, 77, 56, 12, 19, p));
+    if (waving || cheering || wailing) rotated(canvas, 28, 85, 43, () => oval(canvas, 79, 33, 12, 20, p));
+    else if (sideArms) rotated(canvas, -16, 83, 65.5, () => oval(canvas, 77, 56, 12, 19, p));
     if (peek) {
       oval(canvas, 17, 59, 19, 11, p);
       oval(canvas, 64, 59, 19, 11, p);
@@ -140,6 +201,11 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false } = {})
     return;
   }
 
+  if (wailing) {
+    // Sitting in a puddle of its own tears.
+    oval(canvas, 6, 84, 88, 15, paint({ hex: TEAR, alpha: 0.55 }));
+    oval(canvas, 14, 86.5, 30, 4, paint({ hex: C.white, alpha: 0.5, blur: 1 }));
+  }
   if (!peek) oval(canvas, 22, 87, 56, 10, paint({ hex: C.shadow, alpha: 0.3, blur: 3.5 }));
   // Sticker edge: soft drop shadow, warm outline, white die-cut border, white fill.
   canvas.save();
@@ -167,8 +233,8 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false } = {})
     });
   ear(earL, 30, 38);
   ear(earR, 55, 62);
-  if (cheering) limb(9, 33, 12, 20, -28);
-  else if (!peek) limb(11, 56, 12, 19, 16);
+  if (cheering || wailing) limb(9, 33, 12, 20, -28);
+  else if (sideArms) limb(11, 56, 12, 19, 16);
 
   // Body, lit from the top left, with ambient shading, a pale tummy and a sheen.
   canvas.drawPath(BODY, radial(40, 45, 54, FUR, [0, 0.42, 1]));
@@ -186,29 +252,64 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false } = {})
     canvas.drawCircle(60.3, 32.8, 0.8, paint({ hex: C.white, alpha: 0.7 }));
   }
 
-  // Cheeks and face.
-  oval(canvas, 23.5, 62, 14, 8.5, paint({ hex: C.blush, alpha: 0.6, blur: 2.6 }));
-  oval(canvas, 62.5, 62, 14, 8.5, paint({ hex: C.blush, alpha: 0.6, blur: 2.6 }));
+  // Cheeks and face (flushed when upset).
+  const blush = pleading || sad ? 0.85 : 0.6;
+  oval(canvas, 23.5, 62, 14, 8.5, paint({ hex: C.blush, alpha: blush, blur: 2.6 }));
+  oval(canvas, 62.5, 62, 14, 8.5, paint({ hex: C.blush, alpha: blush, blur: 2.6 }));
   if (sleeping) {
     canvas.drawPath(EYE_SHUT_L, paint({ hex: C.face, stroke: 2.2 }));
     canvas.drawPath(EYE_SHUT_R, paint({ hex: C.face, stroke: 2.2 }));
   } else if (cheering) {
     canvas.drawPath(EYE_JOY_L, paint({ hex: C.face, stroke: 2.4 }));
     canvas.drawPath(EYE_JOY_R, paint({ hex: C.face, stroke: 2.4 }));
+  } else if (wailing) {
+    // Squeezed shut: > <
+    canvas.drawPath(svg('M36.4 54.8 L 43.4 58.6 L 36.4 62.4 M63.6 54.8 L 56.6 58.6 L 63.6 62.4'), paint({ hex: C.face, stroke: 2.6 }));
   } else {
-    for (const x of [37, 55.4]) {
-      oval(canvas, x, 53.4, 7.6, 9, paint({ hex: C.face }));
-      canvas.drawCircle(x + 2.5, 56, 1.9, paint({ hex: C.white }));
-      canvas.drawCircle(x + 5.2, 60, 0.9, paint({ hex: C.white, alpha: 0.8 }));
+    drawEyes(canvas, eyes, pleading ? 1.5 : crying ? 1.3 : 1);
+  }
+  if (pleading || sad) {
+    // Worried brows, steeply raised towards the middle.
+    const brows = wailing ? 'M34.4 51.6 Q 38.6 46.8 44.6 46.2 M55.4 46.2 Q 61.4 46.8 65.6 51.6' : 'M33.6 50.6 Q 38 45.2 44.4 45.6 M55.6 45.6 Q 62 45.2 66.4 50.6';
+    canvas.drawPath(svg(brows), paint({ hex: C.face, alpha: 0.8, stroke: 1.5 }));
+  }
+  if (crying) {
+    // Two streams of tears running from the eyes down the cheeks.
+    for (const x of [40.2, 59.8]) {
+      const s = x < 50 ? -1 : 1;
+      const d = `M ${x - 2.6} 62.8 Q ${x - 3.4 + s * 1.5} 75 ${x - 3.6 + s * 2.5} 86 Q ${x + s * 2.5} 89.6 ${x + 3.6 + s * 2.5} 86 Q ${x + 3.4 + s * 1.5} 75 ${x + 2.6} 62.8 Z`;
+      canvas.drawPath(svg(d), paint({ hex: TEAR, alpha: 0.9 }));
+      canvas.drawPath(svg(`M ${x - 1} 66 Q ${x - 1.4 + s} 74 ${x - 1.2 + s * 2} 83`), paint({ hex: C.white, alpha: 0.75, stroke: 0.9 }));
     }
+  }
+  if (wailing) {
+    // Tears spraying out sideways in arcs, with drops flying.
+    const jet = paint({ hex: TEAR, stroke: 3.6 });
+    canvas.drawPath(svg('M35 58 Q 22 46 9 58'), jet);
+    canvas.drawPath(svg('M65 58 Q 78 46 91 58'), jet);
+    for (const [x, y, r] of [[7, 63, 2], [4, 69, 1.4], [93, 63, 2], [96, 69, 1.4], [13, 52, 1.1], [87, 52, 1.1]]) {
+      canvas.drawCircle(x, y, r, paint({ hex: TEAR }));
+    }
+    canvas.drawPath(svg('M33 54 Q 22 44 12 54'), paint({ hex: C.white, alpha: 0.55, stroke: 0.9 }));
+    canvas.drawPath(svg('M67 54 Q 78 44 88 54'), paint({ hex: C.white, alpha: 0.55, stroke: 0.9 }));
   }
   oval(canvas, 47.9, 62.3, 4.2, 3, paint({ hex: C.nose }));
   if (cheering) canvas.drawPath(OPEN_MOUTH, paint({ hex: MOUTH }));
+  else if (wailing) {
+    // Mouth wide open, mid-sob.
+    canvas.drawPath(WAIL_MOUTH, paint({ hex: MOUTH_DEEP }));
+    oval(canvas, 46.6, 72.4, 6.8, 3.4, paint({ hex: C.blush }));
+  } else if (crying) canvas.drawPath(WOBBLE, paint({ hex: C.face, stroke: 1.5 }));
+  else if (pleading) canvas.drawPath(LITTLE_O, paint({ hex: MOUTH }));
   else canvas.drawPath(SMILE, paint({ hex: C.face, stroke: 1.5 }));
 
-  // Front arm, or two paws gripping the edge.
-  if (waving || cheering) limb(79, 33, 12, 20, 28);
-  else if (!peek) limb(77, 56, 12, 19, -16);
+  // Front arm, two paws clasped under the chin, or two paws gripping the edge.
+  if (waving || cheering || wailing) limb(79, 33, 12, 20, 28);
+  else if (sideArms) limb(77, 56, 12, 19, -16);
+  if (pleading) {
+    limb(38.5, 70, 11, 15, 14);
+    limb(50.5, 70, 11, 15, -14);
+  }
   if (peek) {
     limb(17, 59, 19, 11);
     limb(64, 59, 19, 11);
@@ -281,28 +382,57 @@ function bunnyAt(canvas, x, y, scale, opts) {
 const S = 1024;
 const BUDDY_PX = 600;
 
-// iOS / store icon: full-bleed peach page, bunny waving, the name underneath.
-const iconBytes = render(
-  S,
-  (c) => {
-    dottedPaper(c, S);
-    bunnyAt(c, S / 2 - 6.0 * 50, 70, 6.0, { mood: 'wave' });
-    drawName(c, S / 2, 930, 230);
-  },
-  'icon.png',
-);
+// PREVIEW=/path/sheet.png: draw every eye style side by side (happy + wave) and stop, writing nothing to assets.
+if (process.env.PREVIEW) {
+  const moods = ['wave', 'plead', 'cry', 'wail', 'cheer', 'happy'];
+  const cell = 400;
+  const surface = CK.MakeSurface(cell * 3, cell * 2);
+  const c = surface.getCanvas();
+  c.clear(color(C.paper));
+  moods.forEach((mood, i) => bunnyAt(c, (i % 3) * cell + 20, Math.floor(i / 3) * cell + 20, 3.6, { mood }));
+  surface.flush();
+  writeFileSync(process.env.PREVIEW, surface.makeImageSnapshot().encodeToBytes());
+  console.log('wrote ' + process.env.PREVIEW);
+  process.exit(0);
+}
 
-// Android adaptive icon: background layer = the page, foreground = bunny + name inside the safe zone
-// (the middle 66% survives every launcher mask).
+/**
+ * The app icon is the bunny on its own, whole, on the peach page, and it is alive: when today's page
+ * is still empty it switches to a pleading bunny, and after a missed day to a teary one (see
+ * src/lib/appIcon.ts). Each state is an icon set: a full iOS icon, plus an Android adaptive foreground
+ * with the page baked in (alternate icons on Android take a foreground image and a plain color).
+ * The bunny sits inside the adaptive safe zone (the middle 66%), so every launcher mask shows all of it.
+ */
+const ICON_STATES = [
+  { file: 'icon', mood: 'wave' },
+  { file: 'icon-waiting', mood: 'plead' },
+  { file: 'icon-missed', mood: 'cry' },
+  { file: 'icon-gone', mood: 'wail' },
+];
+const ICON_SCALE = 8.6; // 860 px bunny on the 1024 full-bleed icon
+const ADAPTIVE_SCALE = 6.0; // 600 px: inside the 676 px safe zone
+let iconBytes;
+for (const { file, mood } of ICON_STATES) {
+  const bytes = render(
+    S,
+    (c) => {
+      dottedPaper(c, S);
+      bunnyAt(c, S / 2 - ICON_SCALE * 50, S / 2 - ICON_SCALE * 53, ICON_SCALE, { mood });
+    },
+    `${file}.png`,
+  );
+  if (file === 'icon') iconBytes = bytes;
+  render(
+    S,
+    (c) => {
+      if (file !== 'icon') dottedPaper(c, S, { margin: false });
+      bunnyAt(c, S / 2 - ADAPTIVE_SCALE * 50, S / 2 - ADAPTIVE_SCALE * 52, ADAPTIVE_SCALE, { mood });
+    },
+    file === 'icon' ? 'android-icon-foreground.png' : `android-${file}-foreground.png`,
+  );
+}
+// Android adaptive icon background layer: the page.
 render(S, (c) => dottedPaper(c, S, { margin: false }), 'android-icon-background.png');
-render(
-  S,
-  (c) => {
-    bunnyAt(c, S / 2 - 3.5 * 50, 262, 3.5, { mood: 'wave' });
-    drawName(c, S / 2, 722, 122);
-  },
-  'android-icon-foreground.png',
-);
 render(S, (c) => bunnyAt(c, S / 2 - 4.4 * 50, 250, 4.4, { mood: 'wave', mono: true }), 'android-icon-monochrome.png');
 
 // Splash: the bunny alone, standing, on a transparent sheet (the splash color shows around it).
@@ -333,3 +463,43 @@ render(BUDDY_PX, (c) => {
   c.scale(BUDDY_PX / 100, BUDDY_PX / 100);
   drawBow(c, C.white);
 }, 'buddy/bow.png');
+
+// The widget picker's preview: the home-screen widget on an empty day (src/widget/TodayWidget.tsx).
+render(
+  640,
+  (c) => {
+    const card = CK.RRectXY(CK.XYWHRect(8, 8, 624, 304), 48, 48);
+    c.drawRRect(card, paint({ hex: C.shadow, alpha: 0.18, blur: 8 }));
+    c.save();
+    c.clipRRect(card, CK.ClipOp.Intersect, true);
+    dottedPaper(c, 640, { margin: false });
+    c.restore();
+    bunnyAt(c, 28, 52, 2.1, { mood: 'wave' });
+    const font = (size) => new CK.Font(caveat, size);
+    c.drawText('today', 262, 92, paint({ hex: C.ink }), font(46));
+    c.drawText('Nov 11', 500, 90, paint({ hex: C.ink, alpha: 0.55 }), font(34));
+    c.drawText("What's one small thing", 262, 150, paint({ hex: C.ink }), font(38));
+    c.drawText('from today?', 262, 192, paint({ hex: C.ink }), font(38));
+    c.drawRRect(CK.RRectXY(CK.XYWHRect(262, 222, 176, 52), 26, 26), paint({ hex: C.coral }));
+    c.drawText('+ add today', 284, 258, paint({ hex: C.white }), font(34));
+    // A strip of tape across the top.
+    rotated(c, -3, 320, 18, () => c.drawRect(CK.XYWHRect(250, 4, 140, 30), paint({ hex: C.coral, alpha: 0.85 })));
+  },
+  'widget-preview.png',
+  320,
+);
+
+// Notifications. Status-bar icon: Android wants a 96x96 all-white silhouette (it tints it).
+render(96, (c) => {
+  c.scale(96 / 100, 96 / 100);
+  drawBunny(c, { mood: 'wave', mono: true });
+}, 'notification-icon.png');
+// Large picture next to the text: the bunny waving on a round peach dotted page.
+render(256, (c) => {
+  const clip = svg('M 128 0 A 128 128 0 1 1 127.9 0 Z');
+  c.save();
+  c.clipPath(clip, CK.ClipOp.Intersect, true);
+  dottedPaper(c, 256, { margin: false });
+  c.restore();
+  bunnyAt(c, 128 - 2.05 * 50, 30, 2.05, { mood: 'wave' });
+}, 'notification-large.png');

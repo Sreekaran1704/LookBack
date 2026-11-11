@@ -15,6 +15,8 @@ export interface EntriesRepository {
   getByDate(localDate: LocalDate): Promise<Entry | null>;
   getByYear(year: number): Promise<Entry[]>;
   count(): Promise<number>;
+  /** Every day that has a page, newest first (cheap: for the app icon's mood and the widget). */
+  listDates(): Promise<LocalDate[]>;
   /** Creates or updates the single entry for that day. */
   saveForDate(input: SaveEntryInput): Promise<Entry>;
   /** Inserts an entry as-is (used by the dev seeder and, later, restore). */
@@ -103,6 +105,12 @@ function createSqliteEntriesRepository(): EntriesRepository {
       const db = await getDb();
       const row = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM entries');
       return row?.n ?? 0;
+    },
+
+    async listDates() {
+      const db = await getDb();
+      const rows = await db.getAllAsync<{ local_date: string }>('SELECT DISTINCT local_date FROM entries ORDER BY local_date DESC');
+      return rows.map((r) => r.local_date);
     },
 
     async saveForDate({ id, localDate, text, photo, style }) {

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useState, useSyncExternalStore } from 'react';
 import { AppState } from 'react-native';
-import { entriesRepository, settingsRepository, type Entry, type ReminderSettings } from '../data';
+import { entriesRepository, settingsRepository, type Entry, type Profile, type ReminderSettings } from '../data';
 import { toLocalDate } from '../lib/dates';
 
 /** Runs `load` now and whenever `subscribe` reports a change. */
@@ -108,6 +108,11 @@ export function useEntry(id: string): { data: Entry | null | undefined } {
 
 export function useReminderSettings() {
   return useLiveQuery<ReminderSettings>(settingsRepository.getReminder, settingsRepository.subscribe);
+}
+
+/** What the bunny calls you. */
+export function useProfile() {
+  return useLiveQuery<Profile>(settingsRepository.getProfile, settingsRepository.subscribe);
 }
 
 /** Today's local date; updates when the app comes back to the foreground on a new day. */

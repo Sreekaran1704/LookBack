@@ -2,6 +2,7 @@ import { Image, type ImageRef } from 'expo-image';
 import { memo, useEffect } from 'react';
 import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
+  cancelAnimation,
   Easing,
   useAnimatedStyle,
   useReducedMotion,
@@ -12,6 +13,7 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme';
+import { usePageActive } from '../PageActive';
 
 export type BuddyMood = 'wave' | 'happy' | 'sleepy' | 'cheer' | 'peek';
 
@@ -67,6 +69,8 @@ export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, e
   const { colors, sizes, motion } = theme;
   const s = size ?? sizes.buddy;
   const reduceMotion = useReducedMotion();
+  // Holds still while its page is hidden (the bar's pages stay built behind the visible one).
+  const active = usePageActive();
   const bob = useSharedValue(0);
   const pop = useSharedValue(reduceMotion || !entrance ? 1 : POP_FROM);
   const hop = useSharedValue(0);
@@ -80,10 +84,14 @@ export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, e
 
   useEffect(() => {
     if (reduceMotion) return;
+    if (!active) {
+      cancelAnimation(bob);
+      return;
+    }
     const duration = cheering ? motion.buddyBobMs / 4 : sleeping ? motion.buddyBobMs * 1.6 : motion.buddyBobMs;
     bob.set(0);
     bob.set(withRepeat(withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }), -1, true));
-  }, [bob, cheering, sleeping, motion.buddyBobMs, reduceMotion]);
+  }, [bob, cheering, sleeping, motion.buddyBobMs, reduceMotion, active]);
 
   // Pop in on arrival (each screen the buddy shows up on).
   useEffect(() => {
