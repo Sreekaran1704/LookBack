@@ -23,7 +23,8 @@
       },
       "predictiveBackGestureEnabled": false,
       "allowBackup": false,
-      "package": "com.yearbook.app"
+      "package": "com.yearbook.app",
+      "versionCode": 1
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -125,7 +126,8 @@
           ]
         }
       ],
-      "./plugins/withHighRefreshRate"
+      "./plugins/withHighRefreshRate",
+      "./plugins/withReleaseSigning"
     ],
     "scheme": "yearbook",
     "experiments": {

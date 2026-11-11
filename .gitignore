@@ -47,3 +47,6 @@ yarn-error.*
 CLAUDE.md
 __tests__/
 screenshots/
+
+# Built release APKs
+release/
