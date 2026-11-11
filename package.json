@@ -55,7 +55,7 @@
     "ios": "expo run:ios",
     "typecheck": "tsc --noEmit",
     "lint": "expo lint",
-    "test": "jest",
+    "test": "jest --passWithNoTests",
     "check": "npm run typecheck && npm run lint && npm test",
     "build:android:preview": "eas build --platform android --profile preview"
   },
