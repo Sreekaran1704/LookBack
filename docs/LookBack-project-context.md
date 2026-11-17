@@ -16,10 +16,13 @@ save one small thing a day: a note, a quote or a photo. On the same date a year 
 from your past self". It has a handmade scrapbook look: every memory is a polaroid, torn note, ticket stub or taped
 photo, and a small bunny mascot keeps you company.
 
-- **Built:** November 2026 (first commit Nov 9, 2026; release build Nov 11, 2026)
+- **Built:** November 2026 (first commit Nov 9, 2026; v1.0.0 released Nov 11, 2026; **v1.1.0 released Nov 17, 2026**
+  after a week of daily use: two real-use bugs fixed, memory deletion added, paper-matched navigation bar)
 - **Status:** working Android release build, installed and tested daily on a real phone (OnePlus Nord 5).
   Play Store release is a planned next step. iOS is configured but not tested on a device.
-- **Size:** about 9,700 lines of TypeScript across 73 source files; 82 automated unit tests in 8 suites; strict typing,
+- **Releases:** public GitHub repo with signed APK releases (https://github.com/Sreekaran1704/LookBack/releases).
+  v1.1.0 is signed with the same release key as v1.0.0, so it installs as an update and keeps people's data.
+- **Size:** about 10,350 lines of TypeScript across 75 source files; 89 automated unit tests in 8 suites; strict typing,
   linting and tests run before every change.
 
 ## 2. The problem and the product idea
@@ -57,6 +60,13 @@ Product decisions I made:
   how long today's page has been empty. It switches only while the app is in the background, to avoid crashes.
 - **Home-screen widget (Android):** add today's entry in one tap, see today's entry, or see "💌 2 letters!".
 - **Google Drive backup:** sign-in plus a two-way merge sync. Runs on demand and automatically about once a day.
+- **Deleting a memory (v1.1):** asked on a paper card in the app's own style (not a system dialog), then a small
+  animation: the bunny's head opens like a lid, the memory floats out of its pink brain and drops into a paper
+  shredder with a face, which shakes out paper strips. One UI-thread clock drives every piece; tap skips it, and
+  "reduce motion" turns it into a short fade.
+- **Paper-matched navigation bar (v1.1):** the bottom bar is generated from the chosen paper (a brighter sheet in
+  light, a lamp-lit shade in dark, tape in the paper's two accents) for all 7 papers × 2 tones, with a unit test
+  that checks label contrast on every combination.
 - **Animated intro and splash:** the native splash hands off seamlessly to an animated intro, where memories rain
   down and pile up around the bunny.
 - **Accessibility:** respects the system's "reduce motion" setting everywhere (fades instead of springs, no idle
@@ -75,7 +85,7 @@ Product decisions I made:
 | Cloud | Google Sign-In (`react-native-nitro-google-signin`), **Google Drive REST API** (`drive.file` scope) |
 | Asset pipeline | Node script using **CanvasKit** to generate every icon, splash, mascot pose and notification image from one drawing in code |
 | Native config | Custom **Expo config plugins** (120 Hz display mode, release signing); Continuous Native Generation (no hand-edited native folders) |
-| Quality | Jest (82 unit tests), ESLint (Expo config + React Compiler rules), `tsc --noEmit`; testing on a real phone over ADB |
+| Quality | Jest (89 unit tests), ESLint (Expo config + React Compiler rules), `tsc --noEmit`; testing on a real phone over ADB |
 | Builds | Local Gradle release builds over USB; EAS Build profiles (preview APK, production) |
 
 ## 5. Architecture and engineering decisions
@@ -89,7 +99,8 @@ Product decisions I made:
   - Dates are stored as the *local* calendar date (`YYYY-MM-DD`), never derived from UTC, to avoid off-by-one-day
     bugs across time zones.
   - Leap day is handled: Feb 29 entries resurface on Feb 28 in non-leap years.
-- **Schema migrations** via `PRAGMA user_version`, three so far: base schema, then style fields, then style colors.
+- **Schema migrations** via `PRAGMA user_version`, four so far: base schema, style fields, style colors, then a
+  `deleted_entries` table for deletion tombstones (v1.1).
   Shipped migrations are never edited.
 - **Photos** are copied into app storage, downscaled once to 1600 px JPEG, and stored as *relative* paths (the iOS
   container path changes between installs).
@@ -101,6 +112,10 @@ Product decisions I made:
   - Merge rules: two-way merge where the latest `updatedAt` wins. Same day with different ids keeps the latest entry
     (preserving one-per-day). Only missing photos move, and photos upload before the manifest. Sample data never
     leaves the phone.
+  - **Deletions sync as tombstones** (v1.1): a deleted memory is remembered (id + time) and written into the
+    backup manifest, so a two-way merge removes it everywhere instead of restoring it from the other copy. A
+    deletion beats any copy edited before it; an edit made after it (on another phone) wins. The deleted memory's
+    photo is moved to the Drive trash. Older backups without tombstones still load.
   - Android Auto Backup is deliberately turned off because it restored stale data on reinstall.
 - **In-memory entries store,** preloaded during the splash screen, so every screen has its data on the first frame.
 - **Design tokens:** every color, spacing, radius, type style, shadow and motion value comes from one tokens file via
@@ -141,6 +156,17 @@ I profiled with `adb shell dumpsys gfxinfo` and fixed what the numbers showed:
   `memoryKicker()` function with tests ("today" only on a real on-this-day match).
 - **Gesture conflicts:** horizontal swipes on the memory pile vs. vertical page scrolling. Swipes only take over when
   the drag is clearly sideways.
+- **"Google Drive keeps asking to connect again" (found in daily use, fixed in v1.1):**
+  - Symptom: every day or two the app showed Google's account picker, as if the Drive connection was lost.
+  - Cause: the quiet daily auto-backup checked the sign-in with the library's `signIn()`. On Android that is the
+    Credential Manager sheet, not a silent check. I traced it by reading the native Android source of the sign-in
+    library.
+  - Fix: read the saved session (`getCurrentUser()`), never show UI from a background path; only the "Back up now"
+    button may ask, and only if the session is really gone. Verified on the phone after a cold restart.
+- **Deleted data coming back through sync:** found while designing deletion; a plain delete would be undone by the
+  two-way merge. Solved with tombstones (see section 5), covered by 5 new unit tests.
+- **Safe upgrades:** before publishing v1.1, checked the v1.0.0 APK's signing certificate and built v1.1 with the same
+  release key. A debug-key build would have forced users to uninstall and lose their memories.
 
 ## 8. Process and quality
 
@@ -192,8 +218,10 @@ many engineering roles now), present this as a strength: spec-writing, reviewing
   two-way merge sync** behind the same interface without changing the UI.
 - Cut home-screen GPU time per frame **from 12 ms to 5 ms** and scroll jank **from 9% to under 0.3%**. Methods:
   profiling on device, rasterizing static views to GPU textures, and enabling 120 Hz with a custom Expo config plugin.
-- Wrote **82 unit tests** for calendar logic (time zones, leap days), notification scheduling within iOS's
-  64-notification limit, sync conflict rules, and layout maths.
+- Wrote **89 unit tests** for calendar logic (time zones, leap days), notification scheduling within iOS's
+  64-notification limit, sync conflict and deletion rules, theme contrast, and layout maths.
+- Shipped **v1.1 a week after v1.0** from real daily use: fixed a Google sign-in bug that made Drive backup look
+  disconnected, and added memory deletion that syncs correctly through a two-way merge using tombstones.
 - Created a procedural scrapbook UI (polaroids, torn notes, washi tape) with Skia and SVG, seeded per entry for
   stable, unique looks, plus a home-screen widget and a mood-based "lively" app icon.
 - Shipped the app end-to-end with an AI coding agent: I wrote the specs and project rules and verified every change
@@ -201,6 +229,7 @@ many engineering roles now), present this as a strength: spec-writing, reviewing
 
 ## 12. Links / artifacts
 
-- Code: private Git repository (can share on request) <!-- add GitHub link if you make it public -->
+- Code (public): https://github.com/Sreekaran1704/LookBack
+- Releases with signed APKs: https://github.com/Sreekaran1704/LookBack/releases (v1.0.0, v1.1.0)
 - Demo: screenshots or a screen recording from the phone <!-- add link -->
 - Play Store: not yet published
