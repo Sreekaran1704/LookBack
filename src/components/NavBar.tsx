@@ -6,9 +6,8 @@ import Svg, { Path, Rect } from 'react-native-svg';
 import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAllEntries, useToday } from '../hooks/useData';
-import { parseLocalDate } from '../lib/dates';
 import { tapHaptic } from '../lib/haptics';
-import { useTheme, withAlpha } from '../theme';
+import { useTheme } from '../theme';
 import type { IconName } from './Buttons';
 import { PressableScale } from './PressableScale';
 import { WashiTape } from './scrapbook/WashiTape';
@@ -128,7 +127,6 @@ export function NavBar() {
   const today = useToday();
   const { data: entries = [] } = useAllEntries();
   const written = entries.some((e) => e.localDate === today);
-  const palette = theme.year(parseLocalDate(today).year);
   const reduceMotion = useReducedMotion();
   const [keyboard, setKeyboard] = useState(false);
   const [w, setW] = useState(0);
@@ -172,7 +170,8 @@ export function NavBar() {
   const cx = w / 2;
   const cy = d * SINK;
   const notchR = d / 2 + NOTCH_GAP;
-  const fill = written ? colors.green : palette.primary;
+  const nav = theme.nav;
+  const fill = written ? colors.green : nav.plus;
 
   return (
     <Animated.View
@@ -183,18 +182,18 @@ export function NavBar() {
       {w > 0 ? (
         <Svg pointerEvents="none" width={w} height={h + SHADOW_DROP} style={styles.shape}>
           {/* Paper shadow, the strip itself, and a dashed stitch just inside its edge. */}
-          <Path d={stripPath(w, h, cx, cy, notchR)} fill={withAlpha(palette.ink, theme.dark ? 0.5 : 0.18)} transform={`translate(0 ${SHADOW_DROP})`} />
-          <Path d={stripPath(w, h, cx, cy, notchR)} fill={colors.panel} stroke={withAlpha(palette.ink, 0.25)} strokeWidth={1} />
-          <Path d={stripPath(w, h, cx, cy, notchR, STITCH_INSET)} fill="none" stroke={withAlpha(palette.primary, 0.55)} strokeWidth={1.4} strokeDasharray="5 4" strokeLinecap="round" />
+          <Path d={stripPath(w, h, cx, cy, notchR)} fill={nav.shadow} transform={`translate(0 ${SHADOW_DROP})`} />
+          <Path d={stripPath(w, h, cx, cy, notchR)} fill={nav.strip} stroke={nav.edge} strokeWidth={1} />
+          <Path d={stripPath(w, h, cx, cy, notchR, STITCH_INSET)} fill="none" stroke={nav.stitch} strokeWidth={1.4} strokeDasharray="5 4" strokeLinecap="round" />
         </Svg>
       ) : null}
-      <WashiTape width={sizes.tapeHeight * 2.4} color={palette.primary} color2={colors.paperWhite} pattern="stripes" angle={-24} style={[styles.tape, { left: -spacing.md, top: -spacing.sm }]} />
-      <WashiTape width={sizes.tapeHeight * 2.4} color={palette.secondary} color2={colors.paperWhite} pattern="dots" angle={22} style={[styles.tape, { right: -spacing.md, top: -spacing.sm }]} />
+      <WashiTape width={sizes.tapeHeight * 2.4} color={nav.tape} color2={nav.rim} pattern="stripes" angle={-24} style={[styles.tape, { left: -spacing.md, top: -spacing.sm }]} />
+      <WashiTape width={sizes.tapeHeight * 2.4} color={nav.tape2} color2={nav.rim} pattern="dots" angle={22} style={[styles.tape, { right: -spacing.md, top: -spacing.sm }]} />
 
       <View style={[styles.bar, { height: h, paddingHorizontal: spacing.sm }]}>
         <Animated.View layout={layout} style={styles.side}>
-          <Tab icon={onHome ? 'home' : 'home-outline'} label="Home" active={onHome} accent={palette.primary} onPress={() => go('/')} />
-          <Tab icon={onYears ? 'library' : 'library-outline'} label="Years" active={onYears} accent={palette.primary} onPress={() => go('/years')} />
+          <Tab icon={onHome ? 'home' : 'home-outline'} label="Home" active={onHome}  onPress={() => go('/')} />
+          <Tab icon={onYears ? 'library' : 'library-outline'} label="Years" active={onYears}  onPress={() => go('/years')} />
         </Animated.View>
 
         {/* The + sticker sitting in the notch, bunny ears peeking over it. What it does is written under it. */}
@@ -205,7 +204,7 @@ export function NavBar() {
                 key={side}
                 style={[
                   styles.ear,
-                  { width: d * 0.24, height: d * 0.5, borderRadius: d * 0.12, backgroundColor: colors.paperWhite, borderColor: withAlpha(palette.ink, 0.25), transform: [{ rotate: `${side * 16}deg` }] },
+                  { width: d * 0.24, height: d * 0.5, borderRadius: d * 0.12, backgroundColor: nav.rim, borderColor: nav.edge, transform: [{ rotate: `${side * 16}deg` }] },
                 ]}
               >
                 <View style={{ flex: 1, margin: d * 0.05, borderRadius: d * 0.1, backgroundColor: colors.buddyEar }} />
@@ -226,14 +225,14 @@ export function NavBar() {
                 borderRadius: d / 2,
                 backgroundColor: fill,
                 borderWidth: 4,
-                borderColor: colors.paperWhite,
+                borderColor: nav.rim,
                 boxShadow: theme.shadow(fill, 1.2),
               },
             ]}
           >
-            <Ionicons name={written ? 'create' : 'add'} size={sizes.icon * (written ? 1.2 : 1.5)} color={colors.paperWhite} />
+            <Ionicons name={written ? 'create' : 'add'} size={sizes.icon * (written ? 1.2 : 1.5)} color={nav.rim} />
           </PressableScale>
-          <Text numberOfLines={1} style={[typography.small, { color: colors.ink, alignSelf: 'stretch', textAlign: 'center' }]}>
+          <Text numberOfLines={1} style={[typography.small, { color: nav.ink, alignSelf: 'stretch', textAlign: 'center' }]}>
             {written ? 'edit ✓' : 'write'}
           </Text>
         </View>
@@ -241,10 +240,10 @@ export function NavBar() {
         <Animated.View layout={layout} style={styles.side}>
           {action ? (
             <Animated.View key={action.key} entering={enter} exiting={exit} style={{ flex: 1 }}>
-              <Tab icon={action.icon} label={action.label} accent={palette.primary} onPress={action.onPress} />
+              <Tab icon={action.icon} label={action.label}  onPress={action.onPress} />
             </Animated.View>
           ) : null}
-          <Tab icon={onSettings ? 'settings' : 'settings-outline'} label="Settings" active={onSettings} accent={palette.primary} onPress={() => go('/settings')} />
+          <Tab icon={onSettings ? 'settings' : 'settings-outline'} label="Settings" active={onSettings}  onPress={() => go('/settings')} />
         </Animated.View>
       </View>
     </Animated.View>
@@ -255,8 +254,8 @@ export function NavBar() {
 const PILL_MARGIN = 9;
 const PILL_WIDTH = 86;
 
-function Tab({ icon, label, active = false, accent, onPress }: { icon: IconName; label: string; active?: boolean; accent: string; onPress: () => void }) {
-  const { colors, typography, sizes, spacing } = useTheme();
+function Tab({ icon, label, active = false, onPress }: { icon: IconName; label: string; active?: boolean; onPress: () => void }) {
+  const { nav, typography, sizes, spacing } = useTheme();
   const [size, setSize] = useState({ w: 0, h: 0 });
   const pillH = size.h - PILL_MARGIN * 2;
   // The same width for every tab, however much room the tab has.
@@ -277,12 +276,12 @@ function Tab({ icon, label, active = false, accent, onPress }: { icon: IconName;
       {/* The page you're on sits on a soft pill of the year's color, centered in the strip. */}
       {active && size.w > 0 ? (
         <Svg pointerEvents="none" width={size.w} height={size.h} style={StyleSheet.absoluteFill}>
-          <Rect x={(size.w - pillW) / 2} y={PILL_MARGIN} width={pillW} height={pillH} rx={pillH / 2.4} ry={pillH / 2.4} fill={withAlpha(accent, 0.28)} />
+          <Rect x={(size.w - pillW) / 2} y={PILL_MARGIN} width={pillW} height={pillH} rx={pillH / 2.4} ry={pillH / 2.4} fill={nav.active} />
         </Svg>
       ) : null}
-      <Ionicons name={icon} size={sizes.icon} color={active ? colors.ink : colors.inkMuted} />
+      <Ionicons name={icon} size={sizes.icon} color={active ? nav.ink : nav.inkMuted} />
       {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
-      <Text numberOfLines={1} style={[typography.small, { color: active ? colors.ink : colors.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
+      <Text numberOfLines={1} style={[typography.small, { color: active ? nav.ink : nav.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
         {label}
       </Text>
     </PressableScale>

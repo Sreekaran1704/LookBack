@@ -28,6 +28,8 @@ export interface DriveStore {
   readBytes(fileId: string): Promise<Uint8Array>;
   /** Creates the file, or replaces its contents when `existingId` is given. */
   write(folderId: string, name: string, body: string | Uint8Array<ArrayBuffer>, mimeType: string, existingId?: string): Promise<void>;
+  /** Moves a file to the Drive trash (recoverable there for 30 days). */
+  remove(fileId: string): Promise<void>;
 }
 
 /** Google Drive (REST v3) as plain file storage: one folder, flat list of files. */
@@ -104,6 +106,14 @@ export function createDriveStore(tokens: TokenSource): DriveStore {
         id = ((await created.json()) as { id: string }).id;
       }
       await request(`${UPLOAD}/files/${id}?uploadType=media`, { method: 'PATCH', headers: { 'Content-Type': mimeType }, body });
+    },
+
+    async remove(fileId) {
+      await request(`${API}/files/${fileId}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ trashed: true }),
+      });
     },
   };
 }

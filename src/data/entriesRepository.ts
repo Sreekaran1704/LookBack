@@ -3,6 +3,7 @@ import { createChangeEmitter } from './changes';
 import { getDb } from './db';
 import { deletePhoto, importPhoto } from './photoStore';
 import type { Entry, SaveEntryInput } from './types';
+import { LOCAL_ONLY_PREFIX, type Tombstone } from '../lib/backup';
 import { isValidLocalDate, type LocalDate } from '../lib/dates';
 
 /**
@@ -21,7 +22,15 @@ export interface EntriesRepository {
   saveForDate(input: SaveEntryInput): Promise<Entry>;
   /** Inserts an entry as-is (used by the dev seeder and, later, restore). */
   insertRaw(entry: Entry): Promise<void>;
-  remove(id: string): Promise<void>;
+  /**
+   * Deletes an entry and its photo. By default it is remembered as deleted, so a backup sync
+   * removes it everywhere instead of restoring it; sync itself passes `{ remember: false }`.
+   */
+  remove(id: string, options?: { remember?: boolean }): Promise<void>;
+  /** Deletions remembered on this phone (for backup sync). */
+  listDeleted(): Promise<Tombstone[]>;
+  /** Records deletions learned from a backup. */
+  recordDeleted(tombstones: readonly Tombstone[]): Promise<void>;
   subscribe(listener: () => void): () => void;
 }
 
@@ -176,13 +185,35 @@ function createSqliteEntriesRepository(): EntriesRepository {
       changes.emit();
     },
 
-    async remove(id) {
+    async remove(id, options) {
       const db = await getDb();
       const existing = await getById(id);
       if (!existing) return;
-      await db.runAsync('DELETE FROM entries WHERE id = ?', id);
+      const remember = (options?.remember ?? true) && !id.startsWith(LOCAL_ONLY_PREFIX);
+      await db.withTransactionAsync(async () => {
+        await db.runAsync('DELETE FROM entries WHERE id = ?', id);
+        if (remember) {
+          await db.runAsync('INSERT OR REPLACE INTO deleted_entries (id, deleted_at) VALUES (?, ?)', id, new Date().toISOString());
+        }
+      });
       if (existing.photoPath) deletePhoto(existing.photoPath);
       changes.emit();
+    },
+
+    async listDeleted() {
+      const db = await getDb();
+      const rows = await db.getAllAsync<{ id: string; deleted_at: string }>('SELECT id, deleted_at FROM deleted_entries');
+      return rows.map((r) => ({ id: r.id, deletedAt: r.deleted_at }));
+    },
+
+    async recordDeleted(tombstones) {
+      if (tombstones.length === 0) return;
+      const db = await getDb();
+      await db.withTransactionAsync(async () => {
+        for (const t of tombstones) {
+          await db.runAsync('INSERT OR REPLACE INTO deleted_entries (id, deleted_at) VALUES (?, ?)', t.id, t.deletedAt);
+        }
+      });
     },
 
     subscribe: changes.subscribe,

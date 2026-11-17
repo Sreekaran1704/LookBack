@@ -37,14 +37,14 @@ interface Props {
  * blurred layers live, which kept screens with a bunny from scrolling smoothly. The bow is a separate
  * white picture tinted with the year's color. Re-run the script after changing the bunny's look.
  */
-const POSES: Record<BuddyMood, number> = {
+export const POSES: Record<BuddyMood, number> = {
   happy: require('../../../assets/buddy/happy.png'),
   wave: require('../../../assets/buddy/wave.png'),
   sleepy: require('../../../assets/buddy/sleepy.png'),
   cheer: require('../../../assets/buddy/cheer.png'),
   peek: require('../../../assets/buddy/peek.png'),
 };
-const BOW: number = require('../../../assets/buddy/bow.png');
+export const BOW: number = require('../../../assets/buddy/bow.png');
 
 /** Decodes every pose ahead of time, so a bunny never appears a frame late. Call once at startup. */
 export function preloadBuddy(): Promise<ImageRef[]> {

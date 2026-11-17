@@ -33,6 +33,13 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE entries ADD COLUMN sticker_color TEXT;
   ALTER TABLE entries ADD COLUMN tape_color TEXT;
   `,
+  // v4: memories the person deleted, so a Drive sync doesn't bring them back.
+  `
+  CREATE TABLE IF NOT EXISTS deleted_entries (
+    id TEXT PRIMARY KEY NOT NULL,
+    deleted_at TEXT NOT NULL
+  );
+  `,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;

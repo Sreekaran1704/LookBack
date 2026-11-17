@@ -12,7 +12,7 @@ import {
   typography,
   type ColorTokens,
 } from './tokens';
-import { DEFAULT_LOOK, paperByName, type Look, type Paper } from './papers';
+import { DEFAULT_LOOK, navColors, paperByName, type Look, type NavColors, type Paper } from './papers';
 import { withAlpha, yearPalette, type YearPalette } from './yearColors';
 
 export interface Theme {
@@ -22,6 +22,8 @@ export interface Theme {
   lite: boolean;
   /** The page color the person picked (the desk in light and dark tones). */
   paper: Paper;
+  /** The bottom bar's colors, matched to the paper and tone. */
+  nav: NavColors;
   colors: ColorTokens;
   spacing: typeof spacing;
   radii: typeof radii;
@@ -55,6 +57,7 @@ export function makeTheme(look: Look): Theme {
     dark,
     lite: false,
     paper,
+    nav: navColors(paper, look.tone),
     colors,
     ...base,
     shadow: dark ? (_tint, lift = 1) => paperShadow(darkColors.shadowBase, lift, true) : (tint, lift = 1) => paperShadow(tint ?? lightColors.shadowBase, lift, false),

@@ -28,14 +28,27 @@ export interface BackupEntry {
   tapeColor: string | null;
 }
 
+/** A memory the person deleted, kept so a sync doesn't bring it back from another copy. */
+export interface Tombstone {
+  id: string;
+  deletedAt: string;
+}
+
 export interface BackupManifest {
   version: number;
   exportedAt: string;
   entries: BackupEntry[];
+  /** Added after v1 shipped; older backups lack it (read as []). Older apps ignore it. */
+  deleted: Tombstone[];
 }
 
-export function buildManifest(entries: readonly BackupEntry[], exportedAt: string): BackupManifest {
-  return { version: BACKUP_VERSION, exportedAt, entries: [...entries].sort((a, b) => a.localDate.localeCompare(b.localDate)) };
+export function buildManifest(entries: readonly BackupEntry[], exportedAt: string, deleted: readonly Tombstone[] = []): BackupManifest {
+  return {
+    version: BACKUP_VERSION,
+    exportedAt,
+    entries: [...entries].sort((a, b) => a.localDate.localeCompare(b.localDate)),
+    deleted: [...deleted].sort((a, b) => a.id.localeCompare(b.id)),
+  };
 }
 
 const str = (v: unknown): v is string => typeof v === 'string';
@@ -71,7 +84,12 @@ export function parseManifest(json: string): BackupManifest {
       tapeColor: strOrNull(e.tapeColor),
     });
   }
-  return { version: data.version, exportedAt: str(data.exportedAt) ? data.exportedAt : '', entries };
+  const deleted: Tombstone[] = [];
+  for (const item of Array.isArray(data.deleted) ? (data.deleted as unknown[]) : []) {
+    const t = item as Partial<Tombstone> | null;
+    if (t && str(t.id) && str(t.deletedAt)) deleted.push({ id: t.id, deletedAt: t.deletedAt });
+  }
+  return { version: data.version, exportedAt: str(data.exportedAt) ? data.exportedAt : '', entries, deleted };
 }
 
 export interface MergePlan {
@@ -83,6 +101,22 @@ export interface MergePlan {
   removeLocal: string[];
   /** True when the backup's manifest is missing something the phone has, so it must be re-uploaded. */
   remoteChanged: boolean;
+  /** Every deletion either side knows about (latest time per id). */
+  deleted: Tombstone[];
+  /** Deletions the phone hasn't recorded yet. */
+  newLocalTombstones: Tombstone[];
+  /** Photos of deleted memories that no kept memory uses: remove them from the backup. */
+  orphanPhotos: string[];
+}
+
+/** Union of both sides' deletions; the later time wins for an id. */
+function mergeTombstones(a: readonly Tombstone[], b: readonly Tombstone[]): Map<string, string> {
+  const out = new Map<string, string>();
+  for (const t of [...a, ...b]) {
+    const seen = out.get(t.id);
+    if (!seen || t.deletedAt > seen) out.set(t.id, t.deletedAt);
+  }
+  return out;
 }
 
 /** The entry edited most recently wins; ties go to the phone. */
@@ -93,18 +127,31 @@ function newer(local: BackupEntry, remote: BackupEntry): BackupEntry {
 /**
  * Two-way merge. Same id: the most recently edited copy wins. Different ids on the same day
  * (the same day written on two phones): the most recently edited one is kept, because the app
- * holds one entry per day.
+ * holds one entry per day. A deletion beats any copy edited before it (an edit made after the
+ * deletion, on another phone, wins and the memory stays).
  */
-export function mergeEntries(local: readonly BackupEntry[], remote: readonly BackupEntry[]): MergePlan {
+export function mergeEntries(
+  local: readonly BackupEntry[],
+  remote: readonly BackupEntry[],
+  localDeleted: readonly Tombstone[] = [],
+  remoteDeleted: readonly Tombstone[] = [],
+): MergePlan {
   const byDay = new Map<LocalDate, BackupEntry>();
   const localById = new Map(local.map((e) => [e.id, e]));
   const remoteById = new Map(remote.map((e) => [e.id, e]));
+  const tombstones = mergeTombstones(localDeleted, remoteDeleted);
+  const isDeleted = (e: BackupEntry) => {
+    const at = tombstones.get(e.id);
+    return at !== undefined && at >= e.updatedAt;
+  };
 
   for (const entry of local) {
+    if (isDeleted(entry)) continue;
     const current = byDay.get(entry.localDate);
     byDay.set(entry.localDate, current ? newer(current, entry) : entry);
   }
   for (const entry of remote) {
+    if (isDeleted(entry)) continue;
     const current = byDay.get(entry.localDate);
     byDay.set(entry.localDate, current ? newer(current, entry) : entry);
   }
@@ -113,11 +160,29 @@ export function mergeEntries(local: readonly BackupEntry[], remote: readonly Bac
   const keptIds = new Set(merged.map((e) => e.id));
   const same = (a: BackupEntry | undefined, b: BackupEntry) => a !== undefined && a.updatedAt === b.updatedAt;
 
+  const deleted = [...tombstones].map(([id, deletedAt]) => ({ id, deletedAt })).sort((a, b) => a.id.localeCompare(b.id));
+  const localKnown = new Map(localDeleted.map((t) => [t.id, t.deletedAt]));
+  const remoteKnown = new Map(remoteDeleted.map((t) => [t.id, t.deletedAt]));
+  const keptPhotos = new Set(merged.map((e) => e.photoPath));
+  const orphanPhotos = [
+    ...new Set(
+      [...local, ...remote]
+        .filter((e) => !keptIds.has(e.id) && isDeleted(e) && e.photoPath !== null && !keptPhotos.has(e.photoPath))
+        .map((e) => e.photoPath as string),
+    ),
+  ];
+
   return {
     merged,
     writeLocal: merged.filter((e) => !same(localById.get(e.id), e)),
     removeLocal: local.filter((e) => !keptIds.has(e.id)).map((e) => e.id),
-    remoteChanged: merged.length !== remote.length || merged.some((e) => !same(remoteById.get(e.id), e)),
+    remoteChanged:
+      merged.length !== remote.length ||
+      merged.some((e) => !same(remoteById.get(e.id), e)) ||
+      deleted.some((t) => remoteKnown.get(t.id) !== t.deletedAt),
+    deleted,
+    newLocalTombstones: deleted.filter((t) => localKnown.get(t.id) !== t.deletedAt),
+    orphanPhotos,
   };
 }
 

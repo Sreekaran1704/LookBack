@@ -62,14 +62,20 @@ function createBackupRepository(): BackupRepository {
   let running: Promise<BackupResult> | null = null;
 
   async function sync(): Promise<BackupResult> {
+    // Tapped "Back up now" but Google signed this phone out (e.g. after a reinstall): ask once, here.
+    if (!restoreGoogleAccount()) {
+      const account = await chooseGoogleAccount();
+      if (!account) throw new Error('Pick your Google account to back up.');
+      await settingsRepository.setBackup({ account });
+    }
     const folderId = await drive.ensureFolder();
     const remoteFiles = await drive.list(folderId);
     const remoteByName = new Map(remoteFiles.map((f) => [f.name, f]));
     const manifestFile = remoteByName.get(MANIFEST_NAME);
-    const remoteEntries = manifestFile ? parseManifest(await drive.readText(manifestFile.id)).entries : [];
+    const remote = manifestFile ? parseManifest(await drive.readText(manifestFile.id)) : null;
 
     const local = (await entriesRepository.getAll()).filter((e) => !e.id.startsWith(LOCAL_ONLY_PREFIX));
-    const plan = mergeEntries(local, remoteEntries);
+    const plan = mergeEntries(local, remote?.entries ?? [], await entriesRepository.listDeleted(), remote?.deleted ?? []);
     const photos = planPhotos(plan.merged, listPhotoNames(), new Set(remoteByName.keys()));
 
     // Bring photos down before the entries that show them.
@@ -77,7 +83,8 @@ function createBackupRepository(): BackupRepository {
       const file = remoteByName.get(photoName(path));
       if (file) writePhotoBytes(photoName(path), await drive.readBytes(file.id));
     }
-    for (const id of plan.removeLocal) await entriesRepository.remove(id);
+    await entriesRepository.recordDeleted(plan.newLocalTombstones);
+    for (const id of plan.removeLocal) await entriesRepository.remove(id, { remember: false });
     for (const entry of plan.writeLocal) await entriesRepository.insertRaw(entry);
 
     // Send photos up before the manifest that refers to them, so a backup is never half-written.
@@ -85,8 +92,13 @@ function createBackupRepository(): BackupRepository {
       await drive.write(folderId, photoName(path), await readPhotoBytes(path), mimeOf(path));
     }
     if (plan.remoteChanged || !manifestFile) {
-      const manifest = buildManifest(plan.merged, new Date().toISOString());
+      const manifest = buildManifest(plan.merged, new Date().toISOString(), plan.deleted);
       await drive.write(folderId, MANIFEST_NAME, JSON.stringify(manifest), 'application/json', manifestFile?.id);
+    }
+    // Only after the manifest stops pointing at them: photos of deleted memories leave the Drive too.
+    for (const path of plan.orphanPhotos) {
+      const file = remoteByName.get(photoName(path));
+      if (file) await drive.remove(file.id);
     }
 
     await settingsRepository.setBackup({ lastBackupAt: new Date().toISOString() });
@@ -130,7 +142,8 @@ function createBackupRepository(): BackupRepository {
         const info = await settingsRepository.getBackup();
         if (!googleConfigured || !info.account) return;
         if (info.lastBackupAt && Date.now() - new Date(info.lastBackupAt).getTime() < AUTO_SYNC_EVERY_MS) return;
-        if (!(await restoreGoogleAccount())) return;
+        // Never show a Google sheet here: no saved session means wait for "Back up now".
+        if (!restoreGoogleAccount()) return;
         await syncNow();
       } catch (error) {
         console.warn('[backup] automatic backup failed', error);

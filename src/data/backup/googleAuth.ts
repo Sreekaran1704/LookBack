@@ -23,13 +23,19 @@ function ensureConfigured(): void {
   configured = true;
 }
 
-/** Restores the previous Google session without showing anything. Returns the account's email, or null. */
-export async function restoreGoogleAccount(): Promise<string | null> {
+/**
+ * The Google account the app is still signed in to, or null. Shows nothing: it only reads the
+ * session the sign-in library keeps on the phone (`getTokens()` refreshes from that).
+ *
+ * Not `signIn()`: on Android that is the Credential Manager sheet, so the daily quiet backup used
+ * to pop up "choose an account" and it looked as if Drive had to be connected again.
+ */
+export function restoreGoogleAccount(): string | null {
   if (!googleConfigured) return null;
   try {
     ensureConfigured();
-    const response = await GoogleOneTapSignIn.signIn();
-    return isSuccessResponse(response) ? (response.data.user.email ?? response.data.user.id) : null;
+    const user = GoogleOneTapSignIn.getCurrentUser()?.user;
+    return user ? (user.email ?? user.id) : null;
   } catch {
     return null;
   }

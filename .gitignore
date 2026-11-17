@@ -50,3 +50,6 @@ screenshots/
 
 # Built release APKs
 release/
+
+# Private notes (resume / portfolio context)
+private/
