@@ -32,7 +32,7 @@ const NavBarContext = createContext<NavBarState>({ action: null, setAction: () =
  * The bar is for moving between the three main pages. Pages you open into (a memory, a year's diary, the
  * writing page, the first-run questions) have their own action bar instead, so the bar steps aside there.
  */
-const HIDDEN_ON = ['/entry', '/welcome', '/memory', '/year'];
+const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/'];
 
 export function NavBarProvider({ children }: { children: ReactNode }) {
   const [action, setAction] = useState<NavAction | null>(null);

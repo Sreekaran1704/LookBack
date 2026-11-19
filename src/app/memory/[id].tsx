@@ -1,5 +1,5 @@
 import { router, useLocalSearchParams } from 'expo-router';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Alert, ScrollView, Text, View, useWindowDimensions } from 'react-native';
 import { ConfirmSheet } from '../../components/ConfirmSheet';
 import { ActionBar, PageFooter, PageHeader, usePageContentStyle, type BarAction } from '../../components/Screen';
@@ -11,6 +11,7 @@ import { ShredAway } from '../../components/scrapbook/ShredAway';
 import { entriesRepository, resolveVoiceUri, type Entry } from '../../data';
 import { useVoicePlayback } from '../../hooks/useVoicePlayback';
 import { useAfterTransition } from '../../hooks/useAfterTransition';
+import { arriveHaptic, rejectHaptic } from '../../lib/haptics';
 import { useEntry, useToday } from '../../hooks/useData';
 import { planPolaroidWords } from '../../lib/polaroid';
 import { formatDisplayDate, formatMonthDay, memoryKicker, parseLocalDate, toLocalDate } from '../../lib/dates';
@@ -38,6 +39,10 @@ export default function MemoryScreen() {
   // The page slides in light (paper, title, buttons); the memory itself (photo decode, polaroid, audio player) is built
   // once it has arrived, then drops in. Building it mid-slide cost a frame of over a second.
   const arrived = useAfterTransition(theme.motion.screenFallbackMs);
+  // A soft tick as the page settles into place, the way a card clicks onto the desk.
+  useEffect(() => {
+    if (arrived) arriveHaptic();
+  }, [arrived]);
   const voicePlayer = useVoicePlayback(arrived && entry?.voicePath ? resolveVoiceUri(entry.voicePath) : null);
   // The memory being shredded: kept here so the animation can show it while it is deleted underneath.
   const [shredding, setShredding] = useState<Entry | null>(null);
@@ -45,6 +50,7 @@ export default function MemoryScreen() {
   const shred = () => {
     if (!entry) return;
     setAsking(false);
+    rejectHaptic();
     setShredding(entry);
   };
   const afterShred = () => {

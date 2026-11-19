@@ -63,7 +63,7 @@ export function YearsCupboard({ entries, today, width, dropFrom = 0 }: { entries
           );
         }),
       )}
-      decor={<Buddy mood="happy" size={sizes.buddySmall} entrance={false} accent={thisYear.primary} />}
+      decor={<Buddy mood="happy" size={sizes.buddySmall} entrance={false} accent={thisYear.primary} tappable />}
     />
   );
 }

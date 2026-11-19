@@ -2,7 +2,7 @@
   "expo": {
     "name": "LookBack",
     "slug": "yearbook",
-    "version": "1.1.0",
+    "version": "1.2.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -24,7 +24,8 @@
       "predictiveBackGestureEnabled": false,
       "allowBackup": false,
       "package": "com.yearbook.app",
-      "versionCode": 2
+      "versionCode": 3,
+      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"]
     },
     "web": {
       "favicon": "./assets/favicon.png"

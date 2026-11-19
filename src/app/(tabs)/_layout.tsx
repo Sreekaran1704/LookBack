@@ -6,7 +6,7 @@ import PagerView, { type PagerViewProps } from 'react-native-pager-view';
 import Animated, { useEvent } from 'react-native-reanimated';
 import { PageActiveProvider } from '../../components/PageActive';
 import { pagerPosition, registerPager } from '../../components/pagerPosition';
-import { tapHaptic } from '../../lib/haptics';
+import { selectHaptic } from '../../lib/haptics';
 import { useTheme } from '../../theme';
 
 /** The bar's pages, left to right. */
@@ -71,7 +71,7 @@ export default function TabsLayout() {
     if (moving.current) return;
     const target = PAGES[selected.current];
     if (!target || selected.current === index) return;
-    tapHaptic();
+    selectHaptic();
     router.navigate(target.path as PagePath);
   };
 

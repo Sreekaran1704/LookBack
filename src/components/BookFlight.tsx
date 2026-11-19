@@ -13,7 +13,7 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { tapHaptic } from '../lib/haptics';
+import { thudHaptic } from '../lib/haptics';
 import { seededRng, type StickerKind } from '../lib/seeded';
 import { useTheme, withAlpha } from '../theme';
 import { AlbumStack, type DiaryFrame } from './scrapbook/AlbumStack';
@@ -164,7 +164,7 @@ function FlyingDiary({
       }),
     );
   }, [dive, motion.bookFlight.diveMs, onDone]);
-  const thud = useCallback(() => tapHaptic(), []);
+  const thud = useCallback(() => thudHaptic(), []);
 
   useEffect(() => {
     const m = motion.bookFlight;

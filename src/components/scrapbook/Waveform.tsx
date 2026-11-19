@@ -3,7 +3,7 @@ import { memo, useEffect } from 'react';
 import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming, type SharedValue } from 'react-native-reanimated';
 import Svg, { Path } from 'react-native-svg';
-import { tapHaptic } from '../../lib/haptics';
+import { toggleHaptic } from '../../lib/haptics';
 import { formatVoiceMs, MIN_BAR, WAVE_BARS } from '../../lib/voice';
 import { useTheme } from '../../theme';
 import { mixHex } from '../../theme/yearColors';
@@ -153,7 +153,7 @@ export function PlayButton({ size, color, player, label }: { size: number; color
   return (
     <Pressable
       onPress={() => {
-        tapHaptic();
+        toggleHaptic(!player.playing);
         player.toggle();
       }}
       hitSlop={spacing.md}

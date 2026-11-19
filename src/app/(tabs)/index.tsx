@@ -76,7 +76,7 @@ function MemoriesScreen() {
                 />
               </DropIn>
               <View style={{ flex: 1, gap: spacing.md }}>
-                <Buddy mood="happy" accent={thisYear.primary} size={sizes.buddySmall} />
+                <Buddy mood="happy" accent={thisYear.primary} size={sizes.buddySmall} tappable />
                 <Text style={[typography.caption, { color: colors.onDeskMuted }]}>Saved. See you next year.</Text>
                 {/* A texture: its soft shadow would otherwise be blurred again every frame the bunnies bob. */}
                 <Raster style={{ alignSelf: 'flex-start' }}>

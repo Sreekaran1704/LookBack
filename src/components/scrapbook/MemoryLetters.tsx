@@ -7,7 +7,7 @@ import { scheduleOnRN } from 'react-native-worklets';
 import Svg, { Path, Rect } from 'react-native-svg';
 import type { Entry } from '../../data';
 import { parseLocalDate, yearsAgoLabel, yearsBetween } from '../../lib/dates';
-import { tapHaptic } from '../../lib/haptics';
+import { gestureEndHaptic, gestureStartHaptic, selectHaptic, toggleHaptic } from '../../lib/haptics';
 import { seededRng, STICKERS } from '../../lib/seeded';
 import { useTheme } from '../../theme';
 import { Buddy } from './Buddy';
@@ -88,14 +88,14 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
 
   // Send the top letter to the back of the deck; it slides back in from the side it was thrown to.
   const cycle = (x: number) => {
-    tapHaptic();
+    gestureEndHaptic();
     setExit((e) => ({ index: front, x, n: (e?.n ?? 0) + 1 }));
     setOrder((o) => [...o.slice(1), ...o.slice(0, 1)]);
     dragX.set(0);
   };
   const bringToFront = (index: number) => {
     if (index === front) return;
-    tapHaptic();
+    selectHaptic();
     setOrder((o) => {
       const at = o.indexOf(index);
       return [...o.slice(at), ...o.slice(0, at)];
@@ -105,6 +105,9 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
   const pan = usePanGesture({
     activeOffsetX: [-12, 12],
     failOffsetY: [-14, 14],
+    onActivate: () => {
+      scheduleOnRN(gestureStartHaptic);
+    },
     onUpdate: (e) => {
       dragX.set(e.translationX);
     },
@@ -302,7 +305,7 @@ function Letter({ entry, today, width, onOpen, first, perch = true, label = true
 
   const flapPath = `M 0 0 L ${width} 0 L ${width / 2 + 6} ${flapH - 6} Q ${width / 2} ${flapH} ${width / 2 - 6} ${flapH - 6} Z`;
   const toggle = () => {
-    tapHaptic();
+    toggleHaptic(!open);
     setOpen((o) => !o);
     setSettling(true);
     setTimeout(() => setSettling(false), SETTLE_MS);

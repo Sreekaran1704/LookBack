@@ -3,7 +3,7 @@ import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
-import { tapHaptic } from '../lib/haptics';
+import { selectHaptic } from '../lib/haptics';
 import { PAPERS, useTheme, type Paper, type PaperTone } from '../theme';
 import type { IconName } from './Buttons';
 import { PressableScale } from './PressableScale';
@@ -63,7 +63,7 @@ export function SlidingToggle<T extends string>({
           <PressableScale
             key={o.value}
             onPress={() => {
-              tapHaptic();
+              selectHaptic();
               onChange(o.value);
             }}
             haptic={false}

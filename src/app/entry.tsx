@@ -33,7 +33,7 @@ import { entriesRepository, newEntryId, resolvePhotoUri, resolveVoiceUri, type E
 import { useVoicePlayback } from '../hooks/useVoicePlayback';
 import { useToday } from '../hooks/useData';
 import { formatDisplayDate, formatMonthDay, parseLocalDate, resurfaceDate } from '../lib/dates';
-import { successHaptic } from '../lib/haptics';
+import { rejectHaptic, successHaptic } from '../lib/haptics';
 import { lookForEntry, STICKERS, TAPE_PATTERNS, TICKET_MAX_CHARS, type ObjectType, type StickerKind, type TapePattern } from '../lib/seeded';
 import { STYLE_PALETTES, paletteByName, useTheme, type YearPalette } from '../theme';
 
@@ -334,7 +334,7 @@ export default function EntryScreen() {
             />
             {/* The buddy keeps you company while you write: it hops with every keystroke and cheers for a photo. */}
             <View style={[styles.row, { alignItems: 'center', gap: spacing.sm, alignSelf: 'stretch' }]}>
-              <Buddy mood={previewUri ? 'cheer' : text.trim() ? 'happy' : 'wave'} accent={palette.primary} size={sizes.buddySmall * 0.8} bump={`${text.length}-${developKey}`} />
+              <Buddy tappable mood={previewUri ? 'cheer' : text.trim() ? 'happy' : 'wave'} accent={palette.primary} size={sizes.buddySmall * 0.8} bump={`${text.length}-${developKey}`} />
               <Text style={[typography.small, { color: colors.onDeskMuted, flex: 1 }]}>
                 {canSave
                   ? `Lovely. I'll bring this back on ${formatDisplayDate(resurfaceDate(today))}. Decorate it from the buttons below.`
@@ -441,6 +441,7 @@ export default function EntryScreen() {
           confirmIcon="cut-outline"
           onConfirm={() => {
             setAskDelete(false);
+            rejectHaptic();
             setShredding(existingEntry);
           }}
           onCancel={() => setAskDelete(false)}

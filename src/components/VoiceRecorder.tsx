@@ -3,7 +3,7 @@ import { RecordingPresets, requestRecordingPermissionsAsync, setAudioModeAsync, 
 import { useEffect, useState } from 'react';
 import { Alert, Keyboard, Text, View } from 'react-native';
 import Animated, { Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
-import { tapHaptic } from '../lib/haptics';
+import { toggleHaptic } from '../lib/haptics';
 import { formatVoiceMs, levelFromDb, shapeWaveform, VOICE_MAX_MS, WAVE_BARS } from '../lib/voice';
 import { useTheme } from '../theme';
 import { ActionRow, type BarAction } from './Screen';
@@ -72,7 +72,7 @@ export function useVoiceRecording(onDone: (draft: VoiceDraft) => void): VoiceRec
       setElapsed(0);
       recorder.record();
       setRecording(true);
-      tapHaptic();
+      toggleHaptic(true);
     } catch (error) {
       Alert.alert("Couldn't record", error instanceof Error ? error.message : String(error));
     }
@@ -87,7 +87,7 @@ export function useVoiceRecording(onDone: (draft: VoiceDraft) => void): VoiceRec
       setRecording(false);
       setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true }).catch(() => undefined);
     }
-    tapHaptic();
+    toggleHaptic(false);
     const uri = recorder.uri;
     // Too short to be anything (a slip of the finger): keep what was there.
     if (!uri || ms < 500) return;

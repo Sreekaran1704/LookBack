@@ -72,6 +72,49 @@ function rotated(canvas, deg, px, py, draw) {
 }
 const svg = (d) => CK.Path.MakeFromSVGString(d);
 
+/** Small seeded random numbers, so the fur comes out the same on every run. */
+function seeded(seed) {
+  let a = seed >>> 0;
+  return () => {
+    a = (a + 0x6d2b79f5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+/**
+ * Soft fur on a shape: hundreds of tiny short strands combed outwards from (cx, cy), light ones where the
+ * light falls and warm shaded ones below, plus a fine grain, all clipped to the shape. Subtle up close,
+ * it makes the bunny read as plush instead of plastic.
+ */
+function fur(canvas, clip, { x, y, w, h, cx, cy, seed, count }) {
+  const r = seeded(seed);
+  canvas.save();
+  canvas.clipPath(clip, CK.ClipOp.Intersect, true);
+  const light = paint({ hex: C.white, alpha: 0.6, stroke: 0.3 });
+  const dark = paint({ hex: C.shade, alpha: 0.24, stroke: 0.28 });
+  for (let i = 0; i < count; i++) {
+    const px = x + r() * w;
+    const py = y + r() * h;
+    // Combed away from the centre, with a little wander.
+    const a = Math.atan2(py - cy, px - cx) + (r() - 0.5) * 0.9;
+    const len = 0.9 + r() * 1.5;
+    const bend = (r() - 0.5) * 0.8;
+    const ex = px + Math.cos(a) * len;
+    const ey = py + Math.sin(a) * len;
+    const mx = (px + ex) / 2 - Math.sin(a) * bend;
+    const my = (py + ey) / 2 + Math.cos(a) * bend;
+    // Lit from the top left: strands up there catch the light, the rest sit in soft shade.
+    const lit = (px - x) / w + (py - y) / h < 0.95 ? r() < 0.85 : r() < 0.45;
+    canvas.drawPath(svg(`M ${px} ${py} Q ${mx} ${my} ${ex} ${ey}`), lit ? light : dark);
+  }
+  const grain = paint({ hex: C.shadow, alpha: 0.05 });
+  for (let i = 0; i < count * 0.4; i++) canvas.drawCircle(x + r() * w, y + r() * h, 0.12 + r() * 0.12, grain);
+  canvas.restore();
+}
+
 const BODY = svg('M50 31 C 71 31, 84 45, 84 62 C 84 80, 70 91, 50 91 C 30 91, 16 80, 16 62 C 16 45, 29 31, 50 31 Z');
 const SMILE = svg('M46.2 66.2 Q 48.1 68.9 50 66.2 Q 51.9 68.9 53.8 66.2');
 const OPEN_MOUTH = svg('M46 66 Q 50 74.5 54 66 Q 50 67.6 46 66 Z');
@@ -150,7 +193,7 @@ function drawBow(canvas, hex) {
  * bow: a color, or null to leave it out (the app overlays a tinted bow).
  * mono: one-color silhouette with the face punched out (Android themed icon).
  */
-function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes = EYES } = {}) {
+function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes = EYES, blink = false } = {}) {
   const waving = mood === 'wave';
   const cheering = mood === 'cheer';
   const sleeping = mood === 'sleepy';
@@ -220,6 +263,8 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes =
     rotated(canvas, deg, x + w / 2, y + h / 2, () => {
       oval(canvas, x - 1, y + 1.5, w + 2, h + 1, paint({ hex: C.shadow, alpha: 0.22, blur: 2 }));
       oval(canvas, x, y, w, h, radial(x + w * 0.35, y + h * 0.3, Math.max(w, h) * 0.9, FUR, [0, 0.5, 1]));
+      const limbPath = new CK.PathBuilder().addOval(CK.XYWHRect(x, y, w, h)).detachAndDelete();
+      fur(canvas, limbPath, { x, y, w, h, cx: x + w / 2, cy: y + h / 2, seed: Math.round(x * 13 + y), count: Math.round(w * h * 0.2) });
     });
   if (!peek) {
     canvas.drawCircle(81, 77, 6.5, radial(79, 74, 9, FUR, [0, 0.5, 1]));
@@ -229,6 +274,8 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes =
   const ear = (deg, x, px) =>
     rotated(canvas, deg, px, 38, () => {
       oval(canvas, x, 3, 15, 38, radial(x + 5, 12, 30, FUR, [0, 0.4, 1]));
+      const earPath = new CK.PathBuilder().addOval(CK.XYWHRect(x, 3, 15, 38)).detachAndDelete();
+      fur(canvas, earPath, { x, y: 3, w: 15, h: 38, cx: x + 7.5, cy: 30, seed: Math.round(x * 7), count: 110 });
       oval(canvas, x + 4, 9, 7, 25, paint({ hex: C.ear, blur: 1 }));
     });
   ear(earL, 30, 38);
@@ -246,6 +293,10 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes =
   rotated(canvas, -24, 36, 41, () => oval(canvas, 26, 36, 21, 10, paint({ hex: C.white, alpha: 0.8, blur: 2.6 })));
   canvas.drawCircle(31.5, 41, 1.5, paint({ hex: C.white }));
   canvas.restore();
+  fur(canvas, BODY, { x: 16, y: 31, w: 68, h: 60, cx: 50, cy: 58, seed: 1907, count: 620 });
+  // A little curl of fur on top of the head, between the ears.
+  canvas.drawPath(svg('M47.6 33.2 Q 48.4 28.6 51.6 29.2 Q 53.4 29.8 52.4 31.4'), paint({ hex: C.shade, alpha: 0.9, stroke: 1.1 }));
+  canvas.drawPath(svg('M47.9 32.8 Q 48.7 29.4 51.3 29.8'), paint({ hex: C.white, alpha: 0.9, stroke: 0.55 }));
 
   if (bow) {
     drawBow(canvas, bow);
@@ -265,6 +316,11 @@ function drawBunny(canvas, { mood = 'happy', bow = C.coral, mono = false, eyes =
   } else if (wailing) {
     // Squeezed shut: > <
     canvas.drawPath(svg('M36.4 54.8 L 43.4 58.6 L 36.4 62.4 M63.6 54.8 L 56.6 58.6 L 63.6 62.4'), paint({ hex: C.face, stroke: 2.6 }));
+  } else if (blink) {
+    // Mid-blink: soft closed lids with a tiny flick of lashes at the outer corners.
+    canvas.drawPath(EYE_SHUT_L, paint({ hex: C.face, stroke: 2.2 }));
+    canvas.drawPath(EYE_SHUT_R, paint({ hex: C.face, stroke: 2.2 }));
+    canvas.drawPath(svg('M36.9 58.8 L 35.2 57.6 M63.1 58.8 L 64.8 57.6'), paint({ hex: C.face, stroke: 1.2 }));
   } else {
     drawEyes(canvas, eyes, pleading ? 1.5 : crying ? 1.3 : 1);
   }
@@ -396,6 +452,57 @@ if (process.env.PREVIEW) {
   process.exit(0);
 }
 
+// STORE=/dir: the Google Play feature graphic (1024×500) and stop, writing nothing to assets.
+if (process.env.STORE) {
+  const W = 1024;
+  const H = 500;
+  const surface = CK.MakeSurface(W, H);
+  const c = surface.getCanvas();
+  c.clear(color(C.paper));
+  const gap = 32;
+  const dot = paint({ hex: C.dots, alpha: 0.45 });
+  for (let x = gap / 2; x < W; x += gap) for (let y = gap / 2; y < H; y += gap) c.drawCircle(x, y, 2.6, dot);
+  c.drawRect(CK.XYWHRect(56, 0, 5, H), paint({ hex: C.margin, alpha: 0.55 }));
+  const v = paint();
+  v.setShader(CK.Shader.MakeRadialGradient([W / 2, H * 0.42], W * 0.62, [color(C.shadow, 0), color(C.shadow, 0), color(C.shadow, 0.14)], [0, 0.6, 1], CK.TileMode.Clamp));
+  c.drawRect(CK.XYWHRect(0, 0, W, H), v);
+
+  // Two taped polaroids behind the bunny, like memories pinned to the page.
+  const polaroid = (x, y, w, deg, tint) =>
+    rotated(c, deg, x + w / 2, y + w * 0.6, () => {
+      c.drawRRect(CK.RRectXY(CK.XYWHRect(x + 4, y + 8, w, w * 1.2), 6, 6), paint({ hex: C.shadow, alpha: 0.18, blur: 8 }));
+      c.drawRRect(CK.RRectXY(CK.XYWHRect(x, y, w, w * 1.2), 6, 6), paint({ hex: C.white }));
+      const pic = paint();
+      pic.setShader(CK.Shader.MakeLinearGradient([x, y], [x, y + w], [color(tint, 0.55), color(C.highlight, 0.35)], null, CK.TileMode.Clamp));
+      c.drawRect(CK.XYWHRect(x + w * 0.07, y + w * 0.07, w * 0.86, w * 0.86), pic);
+      c.drawRect(CK.XYWHRect(x + w * 0.3, y - 10, w * 0.4, 22), paint({ hex: tint, alpha: 0.7 }));
+    });
+  polaroid(600, 92, 170, -9, '#6FB59B');
+  polaroid(770, 70, 170, 7, C.coral);
+
+  bunnyAt(c, 640, 150, 3.4, { mood: 'wave', bow: C.coral });
+
+  drawName(c, 300, 230, 150);
+  const tagFont = new CK.Font(caveat, 52);
+  const lines = ['one tiny moment a day,', 'back to you next year'];
+  lines.forEach((line, i) => {
+    const w = tagFont.getGlyphWidths(tagFont.getGlyphIDs(line)).reduce((a, b) => a + b, 0);
+    c.drawText(line, 300 - w / 2, 320 + i * 60, paint({ hex: C.ink, alpha: 0.78 }), tagFont);
+    // Caveat has no flower glyph: a little drawn heart ends the line instead.
+    if (i === lines.length - 1) {
+      const hx = 300 + w / 2 + 14;
+      const hy = 320 + i * 60 - 30;
+      const heart = svg(`M ${hx + 14} ${hy + 28} C ${hx - 6} ${hy + 14}, ${hx - 2} ${hy - 4}, ${hx + 14} ${hy + 6} C ${hx + 30} ${hy - 4}, ${hx + 34} ${hy + 14}, ${hx + 14} ${hy + 28} Z`);
+      c.drawPath(heart, paint({ hex: C.coral }));
+    }
+  });
+  surface.flush();
+  const out = path.join(process.env.STORE, 'feature-graphic-1024x500.png');
+  writeFileSync(out, surface.makeImageSnapshot().encodeToBytes());
+  console.log('wrote ' + out);
+  process.exit(0);
+}
+
 /**
  * The app icon is the bunny on its own, whole, on the peach page, and it is alive: when today's page
  * is still empty it switches to a pleading bunny, and after a missed day to a teary one (see
@@ -458,6 +565,13 @@ for (const mood of ['happy', 'wave', 'sleepy', 'cheer', 'peek']) {
     c.scale(BUDDY_PX / 100, BUDDY_PX / 100);
     drawBunny(c, { mood, bow: null });
   }, `buddy/${mood}.png`, mood === 'peek' ? BUDDY_PX * 0.68 : BUDDY_PX);
+}
+// The same open-eyed moods mid-blink: the app lays this over the pose for a moment every few seconds.
+for (const mood of ['happy', 'wave', 'peek']) {
+  render(BUDDY_PX, (c) => {
+    c.scale(BUDDY_PX / 100, BUDDY_PX / 100);
+    drawBunny(c, { mood, bow: null, blink: true });
+  }, `buddy/${mood}-blink.png`, mood === 'peek' ? BUDDY_PX * 0.68 : BUDDY_PX);
 }
 render(BUDDY_PX, (c) => {
   c.scale(BUDDY_PX / 100, BUDDY_PX / 100);

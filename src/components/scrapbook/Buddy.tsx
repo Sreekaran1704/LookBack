@@ -1,17 +1,19 @@
 import { Image, type ImageRef } from 'expo-image';
 import { memo, useEffect } from 'react';
-import { StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
+import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
   Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withDelay,
   withRepeat,
   withSequence,
   withSpring,
   withTiming,
 } from 'react-native-reanimated';
+import { selectHaptic } from '../../lib/haptics';
 import { useTheme } from '../../theme';
 import { usePageActive } from '../PageActive';
 import { Raster } from './Raster';
@@ -29,6 +31,8 @@ interface Props {
   entrance?: boolean;
   /** Called once the picture is actually on screen (the intro waits for this before hiding the splash). */
   onShown?: () => void;
+  /** Tap it and it squishes, hops and blinks (off where a tap must reach something under it, e.g. the intro). */
+  tappable?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -46,10 +50,16 @@ export const POSES: Record<BuddyMood, number> = {
   peek: require('../../../assets/buddy/peek.png'),
 };
 export const BOW: number = require('../../../assets/buddy/bow.png');
+/** The open-eyed poses mid-blink, laid over the pose for a moment. */
+const BLINKS: Partial<Record<BuddyMood, number>> = {
+  happy: require('../../../assets/buddy/happy-blink.png'),
+  wave: require('../../../assets/buddy/wave-blink.png'),
+  peek: require('../../../assets/buddy/peek-blink.png'),
+};
 
 /** Decodes every pose ahead of time, so a bunny never appears a frame late. Call once at startup. */
 export function preloadBuddy(): Promise<ImageRef[]> {
-  return Promise.all([...Object.values(POSES), BOW].map((source) => Image.loadAsync(source)));
+  return Promise.all([...Object.values(POSES), ...Object.values(BLINKS), BOW].map((source) => Image.loadAsync(source)));
 }
 
 /** `peek` only shows the ears, eyes and paws, as if looking over an edge (its picture is the top 68%). */
@@ -59,13 +69,26 @@ const HOP_MS = 130;
 const WAVE_ROCK_DEG = 5;
 const CHEER_BOB = 2.4;
 const POP_FROM = 0.4;
+/** Blinks come every BLINK_MIN_MS + up to BLINK_SPREAD_MS, sometimes twice; the lids stay shut BLINK_HOLD_MS. */
+const BLINK_MIN_MS = 2200;
+const BLINK_SPREAD_MS = 3800;
+const BLINK_HOLD_MS = 90;
+const DOUBLE_BLINK = 0.25;
+/** Breathing: how much it fills out and settles with each bob. */
+const BREATH = 0.014;
+/** Now and then it tilts its head, curious, and back. */
+const TILT_DEG = 4;
+const TILT_MIN_MS = 5000;
+const TILT_SPREAD_MS = 4000;
+/** A tap squishes it (and it springs back up with a hop). */
+const SQUISH = 0.12;
 
 /**
  * The buddy: a small, soft cream bunny sticker that keeps the user company. It is alive: it pops in
  * when it appears, bobs (rocking when it waves, bouncing when it cheers, breathing slowly when asleep),
  * and hops whenever `bump` changes. With "reduce motion" on it holds still. It looks the same in dark mode.
  */
-export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, entrance = true, onShown, style }: Props) {
+export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, entrance = true, onShown, tappable = false, style }: Props) {
   const theme = useTheme();
   const { colors, sizes, motion } = theme;
   const s = size ?? sizes.buddy;
@@ -75,9 +98,13 @@ export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, e
   const bob = useSharedValue(0);
   const pop = useSharedValue(reduceMotion || !entrance ? 1 : POP_FROM);
   const hop = useSharedValue(0);
+  const blink = useSharedValue(0);
+  const tilt = useSharedValue(0);
+  const squish = useSharedValue(0);
   const bow = accent ?? colors.amber;
   const peek = mood === 'peek';
   const height = peek ? s * PEEK_SHARE : s;
+  const blinkPose = BLINKS[mood];
 
   const cheering = mood === 'cheer';
   const waving = mood === 'wave';
@@ -94,6 +121,41 @@ export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, e
     bob.set(withRepeat(withTiming(1, { duration, easing: Easing.inOut(Easing.sin) }), -1, true));
   }, [bob, cheering, sleeping, motion.buddyBobMs, reduceMotion, active]);
 
+  // It blinks every few seconds (now and then twice), like something alive.
+  useEffect(() => {
+    if (reduceMotion || !active || !blinkPose) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const shut = () => withSequence(withTiming(1, { duration: 40 }), withDelay(BLINK_HOLD_MS, withTiming(0, { duration: 70 })));
+    const next = () => {
+      timer = setTimeout(() => {
+        blink.set(Math.random() < DOUBLE_BLINK ? withSequence(shut(), withDelay(110, shut())) : shut());
+        next();
+      }, BLINK_MIN_MS + Math.random() * BLINK_SPREAD_MS);
+    };
+    next();
+    return () => clearTimeout(timer);
+  }, [blink, blinkPose, reduceMotion, active]);
+
+  // Now and then a curious little head tilt, one way or the other, and back.
+  useEffect(() => {
+    if (reduceMotion || !active || waving || cheering) return;
+    let timer: ReturnType<typeof setTimeout>;
+    const next = () => {
+      timer = setTimeout(() => {
+        const dir = Math.random() < 0.5 ? -1 : 1;
+        tilt.set(
+          withSequence(
+            withTiming(dir * TILT_DEG, { duration: 420, easing: Easing.out(Easing.cubic) }),
+            withDelay(700, withTiming(0, { duration: 520, easing: Easing.inOut(Easing.cubic) })),
+          ),
+        );
+        next();
+      }, TILT_MIN_MS + Math.random() * TILT_SPREAD_MS);
+    };
+    next();
+    return () => clearTimeout(timer);
+  }, [tilt, reduceMotion, active, waving, cheering]);
+
   // Pop in on arrival (each screen the buddy shows up on).
   useEffect(() => {
     if (reduceMotion || !entrance) return;
@@ -106,29 +168,58 @@ export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, e
     hop.set(withSequence(withTiming(1, { duration: HOP_MS, easing: Easing.out(Easing.quad) }), withSpring(0, motion.pop)));
   }, [bump, hop, motion.pop, reduceMotion]);
 
+  const onTap = () => {
+    selectHaptic();
+    if (reduceMotion) return;
+    // Squish down under the finger, spring back up into a little hop, and blink twice.
+    squish.set(withSequence(withTiming(1, { duration: 90, easing: Easing.out(Easing.quad) }), withSpring(0, motion.pop)));
+    hop.set(withDelay(90, withSequence(withTiming(1, { duration: HOP_MS, easing: Easing.out(Easing.quad) }), withSpring(0, motion.pop))));
+    if (blinkPose) blink.set(withSequence(withTiming(1, { duration: 40 }), withDelay(80, withTiming(0, { duration: 60 })), withDelay(90, withTiming(1, { duration: 40 })), withDelay(80, withTiming(0, { duration: 70 }))));
+  };
+
   const bobStyle = useAnimatedStyle(() => {
     const wave = (bob.get() - 0.5) * 2;
     const h = hop.get();
+    const q = squish.get();
+    // Breathing: it fills out a touch as it rises and settles as it sinks.
+    const breath = sleeping ? 0.02 : BREATH;
     return {
       transform: [
         { translateY: wave * motion.buddyBobPx * (cheering ? CHEER_BOB : sleeping ? 0.4 : 1) - h * HOP_PX },
-        { rotate: `${waving ? wave * WAVE_ROCK_DEG : 0}deg` },
-        // Squash on take-off, stretch in the air; breathe when asleep.
-        { scaleX: pop.get() * (1 - h * 0.06) },
-        { scaleY: pop.get() * (1 + h * 0.08) * (sleeping ? 1 + wave * 0.02 : 1) },
+        { rotate: `${(waving ? wave * WAVE_ROCK_DEG : 0) + tilt.get()}deg` },
+        // Squash on take-off, stretch in the air; squish when tapped; breathe.
+        { scaleX: pop.get() * (1 - h * 0.06) * (1 + q * SQUISH) * (1 - wave * breath * 0.6) },
+        { scaleY: pop.get() * (1 + h * 0.08) * (1 - q * SQUISH) * (1 + wave * breath) },
       ],
     };
   });
+  const blinkStyle = useAnimatedStyle(() => ({ opacity: blink.get() }));
 
+  const picture = (
+    <Animated.View style={[{ width: s, height, transformOrigin: 'bottom' }, bobStyle]}>
+      <Image source={POSES[mood]} style={{ width: s, height }} contentFit="fill" transition={0} cachePolicy="memory" onDisplay={onShown} />
+      {blinkPose ? (
+        <Animated.View style={[StyleSheet.absoluteFill, blinkStyle]}>
+          <Image source={blinkPose} style={{ width: s, height }} contentFit="fill" transition={0} cachePolicy="memory" />
+        </Animated.View>
+      ) : null}
+      {/* The bow sits at the same place in every pose; only its square's top part shows on 'peek'. */}
+      <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
+        <Image source={BOW} tintColor={bow} style={{ width: s, height: s }} contentFit="fill" transition={0} cachePolicy="memory" />
+      </View>
+    </Animated.View>
+  );
+
+  if (tappable) {
+    return (
+      <Pressable onPress={onTap} style={[{ width: s, height }, style]} accessibilityRole="button" accessibilityLabel="The bunny" hitSlop={sizes.hitSlop}>
+        {picture}
+      </Pressable>
+    );
+  }
   return (
     <View pointerEvents="none" style={[{ width: s, height }, style]} accessibilityElementsHidden importantForAccessibility="no">
-      <Animated.View style={[{ width: s, height, transformOrigin: 'bottom' }, bobStyle]}>
-        <Image source={POSES[mood]} style={{ width: s, height }} contentFit="fill" transition={0} cachePolicy="memory" onDisplay={onShown} />
-        {/* The bow sits at the same place in every pose; only its square's top part shows on 'peek'. */}
-        <View style={[StyleSheet.absoluteFill, { overflow: 'hidden' }]}>
-          <Image source={BOW} tintColor={bow} style={{ width: s, height: s }} contentFit="fill" transition={0} cachePolicy="memory" />
-        </View>
-      </Animated.View>
+      {picture}
     </View>
   );
 });
@@ -148,7 +239,7 @@ export function BuddySays({ text, mood = 'wave', accent, size, bump, style }: Sa
   const { colors, spacing, typography, radii, sizes } = theme;
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, style]}>
-      <Buddy mood={mood} accent={accent} size={size ?? sizes.buddy} bump={bump} />
+      <Buddy mood={mood} accent={accent} size={size ?? sizes.buddy} bump={bump} tappable />
       {/* A texture: its soft shadow would otherwise be blurred again every frame the bunny beside it bobs. */}
       <Raster style={{ flex: 1 }}>
       <View

@@ -16,13 +16,15 @@ save one small thing a day: a note, a quote or a photo. On the same date a year 
 from your past self". It has a handmade scrapbook look: every memory is a polaroid, torn note, ticket stub or taped
 photo, and a small bunny mascot keeps you company.
 
-- **Built:** November 2026 (first commit Nov 9, 2026; v1.0.0 released Nov 11, 2026; **v1.1.0 released Nov 17, 2026**
-  after a week of daily use: two real-use bugs fixed, memory deletion added, paper-matched navigation bar)
+- **Built:** November 2026 (first commit Nov 9, 2026; v1.0.0 released Nov 11, 2026; v1.1.0 released Nov 17, 2026
+  after a week of daily use; **v1.2.0 released Nov 19, 2026**: voice memories, vintage-film photos, a textured and
+  more expressive mascot, one-handed bottom action bars, haptics, and measured transition speed-ups)
 - **Status:** working Android release build, installed and tested daily on a real phone (OnePlus Nord 5).
-  Play Store release is a planned next step. iOS is configured but not tested on a device.
+  A Google Play submission is fully prepared (signed app bundle, listing, Data safety answers, privacy policy, store
+  graphics) but not submitted yet: it needs the paid developer account and a 14-day, 12-tester closed test. iOS is configured but not tested on a device.
 - **Releases:** public GitHub repo with signed APK releases (https://github.com/Sreekaran1704/LookBack/releases).
-  v1.1.0 is signed with the same release key as v1.0.0, so it installs as an update and keeps people's data.
-- **Size:** about 10,350 lines of TypeScript across 75 source files; 89 automated unit tests in 8 suites; strict typing,
+  Every release is signed with the same release key, so each installs as an update and keeps people's data.
+- **Size:** about 12,600 lines of TypeScript across 86 source files; 109 automated unit tests in 10 suites; strict typing,
   linting and tests run before every change.
 
 ## 2. The problem and the product idea
@@ -40,6 +42,19 @@ Product decisions I made:
   sadder the longer you skip a day (in the style of Duolingo's icon).
 
 ## 3. Features
+
+- **Voice memories (v1.2):** record up to a minute with `expo-audio`; the level meter is sampled while recording and
+  saved as a 32-bar waveform, so drawing it never reads the audio file. A voice memory is always a polaroid: alone,
+  the waveform is the picture; with a photo, it runs along the strip and the words move to the back. Playback fills
+  the bars and moves a heart playhead on the UI thread. Voice files back up to Drive like photos (tested merge rules).
+- **Vintage-film photos (v1.2):** prints get sepia/faded colour/soft contrast via Android `filter`, plus a cream
+  wash, warm cast, vignette and sheen drawn as native GPU gradients.
+- **Mascot with life (v1.2):** procedural fur texture (seeded strands clipped to each shape) in the pre-rendered
+  poses, blink poses laid over for ~0.1 s every few seconds, breathing squash-and-stretch, idle head tilts, and a
+  tap reaction (squish, hop, double blink, haptic). Home still idles at 4–5 ms GPU per frame.
+- **One-handed UI and haptics (v1.2):** every page's buttons live in a labelled bottom action bar (One UI-inspired,
+  drawn as taped paper); the main tab bar steps aside on pushed pages. A small haptic vocabulary on Android's own
+  haptic effects (press/release, select, toggle, gesture start/end, arrive, thud, confirm/reject).
 
 - **Daily entry:** a note, quote or photo, with a "Just words | With a photo" toggle and a **live preview** of the
   scrapbook object as you type. You pick its sticker, tape pattern and colors, or tap "Surprise me".
@@ -139,8 +154,22 @@ I profiled with `adb shell dumpsys gfxinfo` and fixed what the numbers showed:
 - **Swapped always-mounted text inputs** on tab pages for tap-to-edit text. They caused a 350 ms stall and a
   keyboard popping up whenever the tab appeared.
 - **Pre-rendered mascot poses** to PNG. Drawing the bunny live cost too many frames.
+- **Traced transition stalls with Perfetto (v1.2)** instead of guessing, reading the slowest `Choreographer#doFrame`
+  slices with Perfetto's trace processor:
+  - Opening a memory: a 1.1 s frame came from the `ios_from_right` screen animation redrawing the outgoing page's
+    GPU textures in software. Switching animation, building the memory after the slide, keeping scrap objects as
+    textures while still, and moving big SVG gradients to native GPU gradients: **worst frame during the slide
+    1,100 ms → ~20 ms**.
+  - Opening a diary: the first frame built every animated piece at once (150 ms). Building them in stages just
+    before each is needed and deferring hidden month headings: **99th-percentile frame 150 ms → 44 ms**.
 
 ## 7. Notable bugs I diagnosed and fixed
+
+- **Play button on a polaroid did nothing (v1.2):** two causes. The polaroid's hidden back side (opacity 0) still
+  caught touches, and Android can't hit-test through a resting perspective transform. Fixed by giving touches only
+  to the facing side and dropping the 3D transform while the card lies still.
+- **Main bar vanished on the Years page (v1.2):** the "hide on pushed pages" rule matched `/year`, which `/years`
+  also starts with. Found while taking store screenshots; fixed to match `/year/` and `/memory/` only.
 
 - **Android text clipping with a handwriting font:**
   - Android under-measures the Caveat font, so self-sizing labels lost their last letter or word. "Daily reminder"
@@ -218,10 +247,13 @@ many engineering roles now), present this as a strength: spec-writing, reviewing
   two-way merge sync** behind the same interface without changing the UI.
 - Cut home-screen GPU time per frame **from 12 ms to 5 ms** and scroll jank **from 9% to under 0.3%**. Methods:
   profiling on device, rasterizing static views to GPU textures, and enabling 120 Hz with a custom Expo config plugin.
-- Wrote **89 unit tests** for calendar logic (time zones, leap days), notification scheduling within iOS's
+- Wrote **109 unit tests** for calendar logic (time zones, leap days), notification scheduling within iOS's
   64-notification limit, sync conflict and deletion rules, theme contrast, and layout maths.
 - Shipped **v1.1 a week after v1.0** from real daily use: fixed a Google sign-in bug that made Drive backup look
   disconnected, and added memory deletion that syncs correctly through a two-way merge using tombstones.
+- Added **voice memories** (recording, waveform, playback, Drive backup) and traced transition stalls with
+  **Perfetto**, cutting the worst frame when opening a memory **from 1.1 s to ~20 ms** and a diary's 99th-percentile
+  frame **from 150 ms to 44 ms**.
 - Created a procedural scrapbook UI (polaroids, torn notes, washi tape) with Skia and SVG, seeded per entry for
   stable, unique looks, plus a home-screen widget and a mood-based "lively" app icon.
 - Shipped the app end-to-end with an AI coding agent: I wrote the specs and project rules and verified every change
@@ -230,7 +262,7 @@ many engineering roles now), present this as a strength: spec-writing, reviewing
 ## 12. Links / artifacts
 
 - Code (public): https://github.com/Sreekaran1704/LookBack
-- Releases with signed APKs: https://github.com/Sreekaran1704/LookBack/releases (v1.0.0, v1.1.0)
+- Releases with signed APKs: https://github.com/Sreekaran1704/LookBack/releases (v1.0.0, v1.1.0, v1.2.0)
 - Demo videos (screen recordings from the real phone, edited with handwritten captions in the app's style):
   - v1.0 launch: `docs/LookBack-demo-linkedin.mp4`
   - v1.1 "what's new" (61 s, vertical, made for LinkedIn): `~/Documents/LookBack-1.1-demo.mp4`. It covers the
@@ -238,4 +270,4 @@ many engineering roles now), present this as a strength: spec-writing, reviewing
     "Back up" with no Google sign-in sheet.
 - LinkedIn posts: one per release (v1.0 launch; v1.1 on the week of real use, the Drive bug and deletion with
   tombstones). Drafts: `docs/linkedin-post-*.md`.
-- Play Store: not yet published
+- Play Store: not yet published; submission prepared in `docs/play-store/` (CHECKLIST.md, listing.md, graphics/)

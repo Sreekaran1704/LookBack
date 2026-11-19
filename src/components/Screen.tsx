@@ -209,7 +209,7 @@ export function PageHeader({ title, count, subtitle, accent, buddyAccent, buddy 
         </View>
         {buddy && buddySize > 0 ? (
           <View style={{ alignItems: 'center' }}>
-            <Buddy mood={buddyMood} accent={buddyAccent ?? accent} size={buddySize} bump={bump} style={wall ? { marginBottom: -sink } : undefined} />
+            <Buddy mood={buddyMood} accent={buddyAccent ?? accent} size={buddySize} bump={bump} tappable style={wall ? { marginBottom: -sink } : undefined} />
             {wall ? <BrickWall width={Math.round(buddySize * WALL_WIDTH)} height={wallH} /> : null}
           </View>
         ) : null}

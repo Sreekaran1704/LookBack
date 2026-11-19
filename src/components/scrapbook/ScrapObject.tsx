@@ -11,7 +11,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { resolvePhotoUri, type Entry } from '../../data';
 import { formatDisplayDate, parseLocalDate } from '../../lib/dates';
-import { tapHaptic } from '../../lib/haptics';
+import { gestureEndHaptic, tapHaptic } from '../../lib/haptics';
 import { lookForEntry, type EntryLook } from '../../lib/seeded';
 import { paletteByName, useTheme } from '../../theme';
 import { DateStamp } from './DateStamp';
@@ -111,8 +111,13 @@ export const ScrapObject = memo(function ScrapObject({
   }
   useEffect(() => {
     if (!turning) return;
+    // A little "landed" tick as the turned polaroid comes down.
+    const land = setTimeout(gestureEndHaptic, motion.flipMs * 0.85);
     const t = setTimeout(() => setTurning(false), motion.flipMs + motion.flipHeartsMs);
-    return () => clearTimeout(t);
+    return () => {
+      clearTimeout(land);
+      clearTimeout(t);
+    };
   }, [turning, motion.flipMs, motion.flipHeartsMs]);
 
   const pressed = useSharedValue(0);

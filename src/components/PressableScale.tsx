@@ -1,11 +1,12 @@
 import type { ReactNode } from 'react';
 import { Pressable, type PressableProps, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
-import { tapHaptic } from '../lib/haptics';
+import { pressHaptic, releaseHaptic } from '../lib/haptics';
 import { useTheme } from '../theme';
 import { EASE_OUT } from './transitions';
 
 const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
+const PRESS_DELAY_MS = 40;
 
 interface Props extends Omit<PressableProps, 'style' | 'children'> {
   style?: StyleProp<ViewStyle>;
@@ -28,16 +29,17 @@ export function PressableScale({ style, children, haptic = true, onPress, disabl
       {...rest}
       disabled={disabled}
       style={[style, animatedStyle, disabled ? { opacity: opacity.disabled } : null]}
+      // A short delay before "pressed", so a finger that starts scrolling over a button never clicks it.
+      unstable_pressDelay={PRESS_DELAY_MS}
       onPressIn={() => {
+        if (haptic && !disabled) pressHaptic();
         scale.set(withTiming(motion.buttonPressScale, { duration: motion.buttonPressInMs, easing: EASE_OUT }));
       }}
       onPressOut={() => {
+        if (haptic && !disabled) releaseHaptic();
         scale.set(withSpring(1, motion.buttonRelease));
       }}
-      onPress={(event) => {
-        if (haptic) tapHaptic();
-        onPress?.(event);
-      }}
+      onPress={onPress}
     >
       {children}
     </AnimatedPressable>
