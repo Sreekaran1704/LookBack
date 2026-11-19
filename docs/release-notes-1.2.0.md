@@ -24,4 +24,4 @@ LookBack 1.2.0: say it out loud. Voice memories, photos that look like old polar
 
 Download `LookBack-1.2.0.apk` below on your Android phone and open it (allow installing unknown apps if asked). It installs over 1.1.0 and keeps your memories. Needs Android 7+ on a 64-bit (arm64) phone.
 
-SHA-256: `13c7eb269c6298aca879591486bf87acb19cc3bca073af4b3718c465545d099f`
+SHA-256: `af863be80f2862211d65296bba49faa0dad4f8c6b4c0562c4f456da25700ea86`

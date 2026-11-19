@@ -86,7 +86,8 @@ latest bundle → roll out (start with a staged rollout, e.g. 20%, if you like).
 
 ## Rebuilding the bundle later
 ```bash
-rm -rf $TMPDIR/metro-* && unset EXPO_PUBLIC_SHOW_DEV_TOOLS && cd android && ANDROID_HOME=~/Library/Android/sdk ./gradlew bundleRelease -PlookbackRelease=true
+rm -rf $TMPDIR/metro-* && unset EXPO_PUBLIC_SHOW_DEV_TOOLS && cd android && ANDROID_HOME=~/Library/Android/sdk ./gradlew bundleRelease -PlookbackRelease=true --rerun-tasks
 ```
+`--rerun-tasks` is required: otherwise Gradle reuses the JS bundle of the last dev test build (developer tools on).
 Output: `android/app/build/outputs/bundle/release/app-release.aab`. Check the signer with
 `keytool -printcert -jarfile app-release.aab` (SHA-256 starts `05:61:B5:5B`).
