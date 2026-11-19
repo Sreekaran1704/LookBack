@@ -127,7 +127,15 @@
         }
       ],
       "./plugins/withHighRefreshRate",
-      "./plugins/withReleaseSigning"
+      "./plugins/withReleaseSigning",
+      [
+        "expo-audio",
+        {
+          "microphonePermission": "LookBack uses the microphone so you can save a little voice note as today’s moment.",
+          "enableBackgroundRecording": false,
+          "enableBackgroundPlayback": false
+        }
+      ]
     ],
     "scheme": "yearbook",
     "experiments": {

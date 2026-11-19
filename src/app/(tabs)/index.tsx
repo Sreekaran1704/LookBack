@@ -1,10 +1,10 @@
 import { router } from 'expo-router';
-import { useCallback, useRef, type ComponentRef } from 'react';
+import { memo, useCallback, useRef, type ComponentRef } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PillButton } from '../../components/Buttons';
-import { useHomeTopRequest, useNavBarSpace } from '../../components/NavBar';
-import { PageFooter, ScreenTitle, SectionHeader } from '../../components/Screen';
+import { Raster } from '../../components/scrapbook/Raster';
+import { useHomeTopRequest } from '../../components/NavBar';
+import { PageFooter, PageHeader, SectionHeader, usePageContentStyle } from '../../components/Screen';
 import { YearsCupboard } from '../../components/YearsCupboard';
 import { Buddy, BuddySays } from '../../components/scrapbook/Buddy';
 import { DropIn } from '../../components/scrapbook/DropIn';
@@ -17,15 +17,13 @@ import { useTheme } from '../../theme';
 
 const TODAY_WIDTH_RATIO = 0.5;
 
-export default function MemoriesScreen() {
+function MemoriesScreen() {
   const theme = useTheme();
   const { colors, spacing, typography, sizes } = theme;
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const today = useToday();
   const { data: entries = [] } = useAllEntries();
   const { data: profile } = useProfile();
-  const navSpace = useNavBarSpace();
   // Tapping Home while on home scrolls back to the top.
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   useHomeTopRequest(useCallback(() => scroll.current?.scrollTo({ y: 0, animated: true }), []));
@@ -34,30 +32,23 @@ export default function MemoriesScreen() {
   const todayEntry = entries.find((e) => e.localDate === today);
   const thisYear = theme.year(parseLocalDate(today).year);
   const contentW = width - spacing.gutter * 2;
+  const pageContent = usePageContentStyle();
 
   return (
     <View style={{ flex: 1 }}>
       <PaperBackground variant="dots" desk />
       <ScrollView
         ref={scroll}
-        contentContainerStyle={{
-          paddingTop: insets.top + spacing.md,
-          paddingBottom: navSpace,
-          paddingHorizontal: spacing.gutter,
-          gap: spacing.xxl,
-        }}
+        contentContainerStyle={pageContent}
       >
         {/* The cover: the app's name, and a hello from the bunny. Adding and settings live in the bar at the bottom. */}
-        <View style={[styles.cover, { gap: spacing.md }]}>
-          <View style={{ flex: 1 }}>
-            <ScreenTitle title="LookBack" accent={thisYear.secondary} />
-            {/* Full width: a shrink-wrapped Caveat label gets under-measured on Android. */}
-            <Text style={[typography.hand, { color: colors.onDeskMuted, marginTop: spacing.xs }]}>
-              {profile?.name ? `hi, ${profile.name} ✿` : 'one small thing a day ✿'}
-            </Text>
-          </View>
-          <Buddy mood="peek" accent={thisYear.primary} size={sizes.buddySmall} />
-        </View>
+        <PageHeader
+          title="LookBack"
+          subtitle={profile?.name ? `hi, ${profile.name} ✿` : 'one small thing a day ✿'}
+          accent={thisYear.secondary}
+          buddyAccent={thisYear.primary}
+          wall
+        />
 
         <View>
           <SectionHeader title="On this day" detail={formatMonthDay(today)} accent={thisYear.primary} />
@@ -87,12 +78,16 @@ export default function MemoriesScreen() {
               <View style={{ flex: 1, gap: spacing.md }}>
                 <Buddy mood="happy" accent={thisYear.primary} size={sizes.buddySmall} />
                 <Text style={[typography.caption, { color: colors.onDeskMuted }]}>Saved. See you next year.</Text>
-                <PillButton label="Edit today" icon="create-outline" onPress={() => router.push('/entry')} />
+                {/* A texture: its soft shadow would otherwise be blurred again every frame the bunnies bob. */}
+                <Raster style={{ alignSelf: 'flex-start' }}>
+                  <PillButton label="Edit today" icon="create-outline" onPress={() => router.push('/entry')} />
+                </Raster>
               </View>
             </View>
           ) : (
             <View style={{ gap: spacing.lg }}>
               <BuddySays mood="wave" accent={thisYear.primary} text="What's one small thing from today?" />
+              <Raster>
               <PillButton
               label="Add today's moment"
               icon="add"
@@ -100,6 +95,7 @@ export default function MemoriesScreen() {
               large
               onPress={() => router.push('/entry')}
             />
+              </Raster>
             </View>
           )}
         </View>
@@ -117,5 +113,9 @@ export default function MemoriesScreen() {
 const styles = StyleSheet.create({
   grid: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'flex-end' },
   todayRow: { flexDirection: 'row', alignItems: 'center' },
-  cover: { flexDirection: 'row', alignItems: 'flex-end' },
 });
+
+// Memoised, ignoring props: the page slider re-renders every page when the route changes, and the first time the bar
+// opens a page the router hands it a new route object, which rebuilt the whole page once (Settings: 90 ms, the stutter at
+// the end of the first swipe to it). The page reads everything it needs through hooks, so its props never matter.
+export default memo(MemoriesScreen, () => true);

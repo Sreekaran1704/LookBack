@@ -40,6 +40,12 @@ const MIGRATIONS: readonly string[] = [
     deleted_at TEXT NOT NULL
   );
   `,
+  // v5: a voice note: its file (relative to the document directory), its waveform (JSON, 0–1 bars) and length.
+  `
+  ALTER TABLE entries ADD COLUMN voice_uri TEXT;
+  ALTER TABLE entries ADD COLUMN voice_wave TEXT;
+  ALTER TABLE entries ADD COLUMN voice_ms INTEGER;
+  `,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;

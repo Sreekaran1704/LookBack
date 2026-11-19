@@ -27,7 +27,7 @@ export function StatusPillProvider({ children }: { children: ReactNode }) {
   const show = useCallback(
     (next: string) => {
       setMessage(next);
-      visible.set(withSpring(1, motion.pop));
+      visible.set(withSpring(1, motion.gentle));
       if (timer.current) clearTimeout(timer.current);
       timer.current = setTimeout(() => {
         visible.set(withSpring(0, motion.gentle));

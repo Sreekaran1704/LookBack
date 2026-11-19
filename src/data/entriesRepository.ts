@@ -2,9 +2,11 @@ import * as Crypto from 'expo-crypto';
 import { createChangeEmitter } from './changes';
 import { getDb } from './db';
 import { deletePhoto, importPhoto } from './photoStore';
+import { deleteVoice, importVoice } from './voiceStore';
 import type { Entry, SaveEntryInput } from './types';
 import { LOCAL_ONLY_PREFIX, type Tombstone } from '../lib/backup';
 import { isValidLocalDate, type LocalDate } from '../lib/dates';
+import { encodeWave, parseWave } from '../lib/voice';
 
 /**
  * The only way the app reads or writes entries. UI code must not touch SQLite or the file
@@ -23,7 +25,7 @@ export interface EntriesRepository {
   /** Inserts an entry as-is (used by the dev seeder and, later, restore). */
   insertRaw(entry: Entry): Promise<void>;
   /**
-   * Deletes an entry and its photo. By default it is remembered as deleted, so a backup sync
+   * Deletes an entry, its photo and its voice note. By default it is remembered as deleted, so a backup sync
    * removes it everywhere instead of restoring it; sync itself passes `{ remember: false }`.
    */
   remove(id: string, options?: { remember?: boolean }): Promise<void>;
@@ -46,10 +48,13 @@ interface EntryRow {
   sticker: string | null;
   sticker_color: string | null;
   tape_color: string | null;
+  voice_uri: string | null;
+  voice_wave: string | null;
+  voice_ms: number | null;
 }
 
-const COLUMNS = 'id, local_date, text, photo_uri, created_at, updated_at, object_type, tape_pattern, sticker, sticker_color, tape_color';
-const PLACEHOLDERS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
+const COLUMNS = 'id, local_date, text, photo_uri, created_at, updated_at, object_type, tape_pattern, sticker, sticker_color, tape_color, voice_uri, voice_wave, voice_ms';
+const PLACEHOLDERS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
 
 function toEntry(row: EntryRow): Entry {
   return {
@@ -64,11 +69,14 @@ function toEntry(row: EntryRow): Entry {
     sticker: row.sticker,
     stickerColor: row.sticker_color,
     tapeColor: row.tape_color,
+    voicePath: row.voice_uri,
+    voiceWave: parseWave(row.voice_wave),
+    voiceMs: row.voice_ms,
   };
 }
 
 function rowValues(e: Entry) {
-  return [e.id, e.localDate, e.text, e.photoPath, e.createdAt, e.updatedAt, e.objectType, e.tapePattern, e.sticker, e.stickerColor, e.tapeColor] as const;
+  return [e.id, e.localDate, e.text, e.photoPath, e.createdAt, e.updatedAt, e.objectType, e.tapePattern, e.sticker, e.stickerColor, e.tapeColor, e.voicePath, encodeWave(e.voiceWave), e.voiceMs] as const;
 }
 
 function createSqliteEntriesRepository(): EntriesRepository {
@@ -122,7 +130,7 @@ function createSqliteEntriesRepository(): EntriesRepository {
       return rows.map((r) => r.local_date);
     },
 
-    async saveForDate({ id, localDate, text, photo, style }) {
+    async saveForDate({ id, localDate, text, photo, voice = { kind: 'keep' }, style }) {
       if (!isValidLocalDate(localDate)) throw new Error(`Invalid local date: ${localDate}`);
       const db = await getDb();
       const existing = await getByDate(localDate);
@@ -138,6 +146,22 @@ function createSqliteEntriesRepository(): EntriesRepository {
         photoPath = null;
       }
 
+      let voicePath = existing?.voicePath ?? null;
+      let voiceWave = existing?.voiceWave ?? null;
+      let voiceMs = existing?.voiceMs ?? null;
+      let voiceToDelete: string | null = null;
+      if (voice.kind === 'set') {
+        voiceToDelete = voicePath;
+        voicePath = await importVoice(voice.sourceUri);
+        voiceWave = voice.wave;
+        voiceMs = Math.round(voice.ms);
+      } else if (voice.kind === 'remove') {
+        voiceToDelete = voicePath;
+        voicePath = null;
+        voiceWave = null;
+        voiceMs = null;
+      }
+
       const trimmed = text.trim();
       const nextStyle = {
         objectType: style?.objectType !== undefined ? style.objectType : (existing?.objectType ?? null),
@@ -149,7 +173,7 @@ function createSqliteEntriesRepository(): EntriesRepository {
       let saved: Entry;
       if (existing) {
         await db.runAsync(
-          'UPDATE entries SET text = ?, photo_uri = ?, updated_at = ?, object_type = ?, tape_pattern = ?, sticker = ?, sticker_color = ?, tape_color = ? WHERE id = ?',
+          'UPDATE entries SET text = ?, photo_uri = ?, updated_at = ?, object_type = ?, tape_pattern = ?, sticker = ?, sticker_color = ?, tape_color = ?, voice_uri = ?, voice_wave = ?, voice_ms = ? WHERE id = ?',
           trimmed,
           photoPath,
           now,
@@ -158,15 +182,21 @@ function createSqliteEntriesRepository(): EntriesRepository {
           nextStyle.sticker,
           nextStyle.stickerColor,
           nextStyle.tapeColor,
+          voicePath,
+          encodeWave(voiceWave),
+          voiceMs,
           existing.id,
         );
-        saved = { ...existing, text: trimmed, photoPath, updatedAt: now, ...nextStyle };
+        saved = { ...existing, text: trimmed, photoPath, voicePath, voiceWave, voiceMs, updatedAt: now, ...nextStyle };
       } else {
         saved = {
           id: id ?? Crypto.randomUUID(),
           localDate,
           text: trimmed,
           photoPath,
+          voicePath,
+          voiceWave,
+          voiceMs,
           createdAt: now,
           updatedAt: now,
           ...nextStyle,
@@ -175,6 +205,7 @@ function createSqliteEntriesRepository(): EntriesRepository {
       }
 
       if (photoToDelete && photoToDelete !== photoPath) deletePhoto(photoToDelete);
+      if (voiceToDelete && voiceToDelete !== voicePath) deleteVoice(voiceToDelete);
       changes.emit();
       return saved;
     },
@@ -197,6 +228,7 @@ function createSqliteEntriesRepository(): EntriesRepository {
         }
       });
       if (existing.photoPath) deletePhoto(existing.photoPath);
+      if (existing.voicePath) deleteVoice(existing.voicePath);
       changes.emit();
     },
 

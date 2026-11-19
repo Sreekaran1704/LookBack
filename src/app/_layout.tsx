@@ -169,6 +169,7 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
         screenOptions={{
           headerShown: false,
           contentStyle: { backgroundColor: colors.desk },
+          // The plain slide: 'ios_from_right' redrew the page behind in software (CPU) mid-slide, a 1 s stall.
           animation: 'slide_from_right',
           animationDuration: motion.screenMs,
         }}

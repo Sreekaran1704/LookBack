@@ -2,6 +2,7 @@ import { entriesRepository, type Entry } from '../data';
 import { addDays, atLocalTime, shiftYears, toLocalDate, type LocalDate } from '../lib/dates';
 import { hashString } from '../lib/seeded';
 import { generateSeedPhoto } from './seedPhotos';
+import { generateSeedVoice } from './seedVoice';
 
 /**
  * DEV ONLY. Seeds fake entries so the "one year ago" logic and every scrapbook object type can be
@@ -38,9 +39,11 @@ interface SeedItem {
   localDate: LocalDate;
   text: string;
   photo: boolean;
+  /** A hummed voice note (a polaroid with its waveform). */
+  voice?: boolean;
 }
 
-function seedEntry(item: SeedItem, photoPath: string | null): Entry {
+function seedEntry(item: SeedItem, photoPath: string | null, voice: { path: string; wave: number[]; ms: number } | null): Entry {
   const at = atLocalTime(item.localDate, 20).toISOString();
   return {
     id: `${SEED_PREFIX}${item.localDate}`,
@@ -54,6 +57,9 @@ function seedEntry(item: SeedItem, photoPath: string | null): Entry {
     sticker: null,
     stickerColor: null,
     tapeColor: null,
+    voicePath: voice?.path ?? null,
+    voiceWave: voice?.wave ?? null,
+    voiceMs: voice?.ms ?? null,
   };
 }
 
@@ -67,8 +73,8 @@ function textFor(i: number): string {
 export function seedPlan(today: LocalDate): SeedItem[] {
   const out: SeedItem[] = [];
   // 1–4 years ago today: fills the "On this day" pile with a mix of objects.
-  out.push({ localDate: shiftYears(today, -1), text: 'Picnic in the park with the whole crew.\nWe stayed until the lights came on.', photo: true });
-  out.push({ localDate: shiftYears(today, -2), text: 'Moved into the new place. Boxes everywhere.', photo: false });
+  out.push({ localDate: shiftYears(today, -1), text: 'Picnic in the park with the whole crew.\nWe stayed until the lights came on.', photo: true, voice: true });
+  out.push({ localDate: shiftYears(today, -2), text: 'Moved into the new place. Boxes everywhere.', photo: false, voice: true });
   out.push({ localDate: shiftYears(today, -3), text: '"Begin anywhere." — painted on the café wall', photo: false });
   out.push({ localDate: shiftYears(today, -4), text: 'Road trip, day one.', photo: true });
   // The next 10 days, one year back, so the notification window has something to schedule.
@@ -93,7 +99,8 @@ export async function seedSampleEntries(today: LocalDate = toLocalDate()): Promi
     const existing = await entriesRepository.getByDate(item.localDate);
     if (existing && !existing.id.startsWith(SEED_PREFIX)) continue;
     const photoPath = item.photo ? generateSeedPhoto(`${SEED_PREFIX}${item.localDate}.jpg`, hashString(item.localDate)) : null;
-    await entriesRepository.insertRaw(seedEntry(item, photoPath));
+    const voice = item.voice ? generateSeedVoice(`${SEED_PREFIX}${item.localDate}.wav`, hashString(item.localDate)) : null;
+    await entriesRepository.insertRaw(seedEntry(item, photoPath, voice));
     added++;
   }
   return added;

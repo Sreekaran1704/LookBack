@@ -1,5 +1,6 @@
 import { Modal, Pressable, StyleSheet, Text, View } from 'react-native';
-import Animated, { FadeIn, ZoomIn, useReducedMotion } from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import { sheetIn } from './transitions';
 import { useTheme, withAlpha } from '../theme';
 import { PillButton, type IconName } from './Buttons';
 import { HAND_TAIL, Panel } from './Screen';
@@ -29,14 +30,19 @@ export function ConfirmSheet({ visible, title, message, confirmLabel, confirmIco
   const buddy = sizes.buddy * 1.15;
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={onCancel}>
-      <Animated.View entering={reduceMotion ? undefined : FadeIn.duration(theme.motion.imageFadeMs)} style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(theme.paper.darkDeep, 0.55) }]}>
+    <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onCancel}>
+      {/* The dimmed page fades in and out with the dialog (the Modal's fade); the card eases up into place. */}
+      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(theme.paper.darkDeep, 0.55) }]}>
         <Pressable accessibilityLabel={cancelLabel} onPress={onCancel} style={StyleSheet.absoluteFill} />
         <View pointerEvents="box-none" style={[styles.center, { padding: spacing.gutter }]}>
-          <Animated.View entering={reduceMotion ? undefined : ZoomIn.springify().damping(14)} style={{ alignSelf: 'stretch' }}>
+          {/* Eases up a little and settles, no bounce: a springy zoom on a question felt jarring. */}
+          <Animated.View
+            entering={sheetIn(reduceMotion)}
+            style={{ alignSelf: 'stretch' }}
+          >
             {/* The peek picture ends just under its eyes: let it rest on the card's edge, not behind it. */}
             <View style={{ alignItems: 'flex-end', paddingRight: spacing.xl, marginBottom: -buddy * 0.02 }}>
-              <Buddy mood={mood} size={buddy} accent={nav.tape} />
+              <Buddy mood={mood} size={buddy} accent={nav.tape} entrance={false} />
             </View>
             <Panel seed="confirm" accent={nav.tape} accent2={nav.tape2}>
               <Text style={[typography.heading, { color: colors.ink }]}>

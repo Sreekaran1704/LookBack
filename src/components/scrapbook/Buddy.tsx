@@ -14,6 +14,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { useTheme } from '../../theme';
 import { usePageActive } from '../PageActive';
+import { Raster } from './Raster';
 
 export type BuddyMood = 'wave' | 'happy' | 'sleepy' | 'cheer' | 'peek';
 
@@ -52,7 +53,7 @@ export function preloadBuddy(): Promise<ImageRef[]> {
 }
 
 /** `peek` only shows the ears, eyes and paws, as if looking over an edge (its picture is the top 68%). */
-const PEEK_SHARE = 0.68;
+export const PEEK_SHARE = 0.68;
 const HOP_PX = 12;
 const HOP_MS = 130;
 const WAVE_ROCK_DEG = 5;
@@ -148,9 +149,10 @@ export function BuddySays({ text, mood = 'wave', accent, size, bump, style }: Sa
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, style]}>
       <Buddy mood={mood} accent={accent} size={size ?? sizes.buddy} bump={bump} />
+      {/* A texture: its soft shadow would otherwise be blurred again every frame the bunny beside it bobs. */}
+      <Raster style={{ flex: 1 }}>
       <View
         style={{
-          flex: 1,
           backgroundColor: colors.paperWhite,
           borderRadius: radii.album,
           borderBottomLeftRadius: radii.paper,
@@ -162,6 +164,7 @@ export function BuddySays({ text, mood = 'wave', accent, size, bump, style }: Sa
       >
         <Text style={[typography.caption, { color: colors.ink }]}>{text}</Text>
       </View>
+      </Raster>
     </View>
   );
 }

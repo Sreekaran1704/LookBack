@@ -83,6 +83,8 @@ export function PillButton({ label, icon, tone = 'paper', large = false, onPress
       {/* textBreakStrategy simple: Android's default strategy drops the last word of a shrink-wrapped Caveat label. */}
       <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.label, { color: palette.fg, flexShrink: 0 }]}>
         {label}
+        {/* A trailing space (as HAND_TAIL in Screen.tsx): Android clips Caveat's last letter at the text's edge. */}
+        {' '}
       </Text>
     </>
   );

@@ -2,13 +2,14 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { router, useFocusEffect, usePathname } from 'expo-router';
 import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
 import { Keyboard, StyleSheet, Text, View } from 'react-native';
-import Svg, { Path, Rect } from 'react-native-svg';
-import Animated, { FadeIn, FadeOut, LinearTransition, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
+import Svg, { Path } from 'react-native-svg';
+import Animated, { FadeIn, FadeOut, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { useAllEntries, useToday } from '../hooks/useData';
 import { tapHaptic } from '../lib/haptics';
 import { useTheme } from '../theme';
 import type { IconName } from './Buttons';
+import { pagerPosition } from './pagerPosition';
 import { PressableScale } from './PressableScale';
 import { WashiTape } from './scrapbook/WashiTape';
 
@@ -27,8 +28,11 @@ interface NavBarState {
 
 const NavBarContext = createContext<NavBarState>({ action: null, setAction: () => undefined });
 
-/** Routes that have no bar: the writing page (it has its own close/save and the keyboard) and the first-run questions. */
-const HIDDEN_ON = ['/entry', '/welcome'];
+/**
+ * The bar is for moving between the three main pages. Pages you open into (a memory, a year's diary, the
+ * writing page, the first-run questions) have their own action bar instead, so the bar steps aside there.
+ */
+const HIDDEN_ON = ['/entry', '/welcome', '/memory', '/year'];
 
 export function NavBarProvider({ children }: { children: ReactNode }) {
   const [action, setAction] = useState<NavAction | null>(null);
@@ -54,7 +58,8 @@ export function useNavAction(action: NavAction | null) {
 export function useNavBarSpace(): number {
   const { sizes, spacing } = useTheme();
   const insets = useSafeAreaInsets();
-  return sizes.navBar + insets.bottom + spacing.xxl;
+  // The + button and its bunny ears stand above the strip (about 0.75 of its size): the page's last line must clear them.
+  return sizes.navBar + insets.bottom + sizes.navCenter * 0.75 + spacing.lg;
 }
 
 /** Home on home scrolls back to the top. */
@@ -68,59 +73,38 @@ export function useHomeTopRequest(scrollToTop: () => void) {
   }, [scrollToTop]);
 }
 
-/** Gap between the + button and the notch cut around it (the same all the way round). */
-const NOTCH_GAP = 6;
-/** How far below the strip's top edge the + button's center sits (share of its size): it rests in the notch. */
-const SINK = 0.08;
 const CORNER = 22;
 const SHADOW_DROP = 3;
 const STITCH_INSET = 5;
-/** Where the notch's curve meets the soft lip that rounds it into the top edge. */
-const LIP_Y = 4;
-const LIP = 12;
+/** Space between the highlight under the page you're on and the strip's edges. */
+const PILL_MARGIN = 9;
 
-/**
- * The strip's outline: a rounded paper band with a round notch around the + button. The notch is a
- * circle around the button's own center (cy below the top edge), so the gap is even all the way round.
- */
-function stripPath(w: number, h: number, cx: number, cy: number, notchR: number, inset = 0): string {
+/** The bar's pages, left to right, all the same width. */
+const PAGES = [
+  { path: '/', label: 'Home', icon: 'home-outline', iconOn: 'home' },
+  { path: '/years', label: 'Years', icon: 'library-outline', iconOn: 'library' },
+  { path: '/settings', label: 'Settings', icon: 'settings-outline', iconOn: 'settings' },
+] as const;
+
+function stripPath(w: number, h: number, inset = 0): string {
   const r = CORNER - inset;
-  const top = inset;
-  const left = inset;
-  const right = w - inset;
-  const bottom = h - inset;
-  const R = notchR + inset;
-  const y0 = top + LIP_Y;
-  const dx = Math.sqrt(Math.max(0, R * R - (y0 - cy) ** 2));
-  const large = y0 < cy ? 1 : 0;
-  return [
-    `M ${left + r} ${top}`,
-    `L ${cx - dx - LIP} ${top}`,
-    `Q ${cx - dx} ${top} ${cx - dx} ${y0}`,
-    `A ${R} ${R} 0 ${large} 0 ${cx + dx} ${y0}`,
-    `Q ${cx + dx} ${top} ${cx + dx + LIP} ${top}`,
-    `L ${right - r} ${top}`,
-    `Q ${right} ${top} ${right} ${top + r}`,
-    `L ${right} ${bottom - r}`,
-    `Q ${right} ${bottom} ${right - r} ${bottom}`,
-    `L ${left + r} ${bottom}`,
-    `Q ${left} ${bottom} ${left} ${bottom - r}`,
-    `L ${left} ${top + r}`,
-    `Q ${left} ${top} ${left + r} ${top}`,
-    'Z',
-  ].join(' ');
+  const l = inset;
+  const t = inset;
+  const rt = w - inset;
+  const b = h - inset;
+  return `M ${l + r} ${t} L ${rt - r} ${t} Q ${rt} ${t} ${rt} ${t + r} L ${rt} ${b - r} Q ${rt} ${b} ${rt - r} ${b} L ${l + r} ${b} Q ${l} ${b} ${l} ${b - r} L ${l} ${t + r} Q ${l} ${t} ${l + r} ${t} Z`;
 }
 
 /**
- * The paper navigation strip at the foot of every page: a stitched paper band taped down at both
- * ends, with a round notch cut out for the + button, which sits in it like a sticker with bunny ears
- * peeking over the top. Home and Years on the left, Settings on the right, plus whatever button the
- * current page adds (the year page's Tidy up / Scatter). The page you're on sits on a soft blob of
- * the year's color. Buttons fade in and out as you move between pages.
+ * The paper bar at the foot of every page: a stitched paper strip taped at both ends with equal places
+ * (Home, Years, Settings, plus a page's own button such as the year page's Tidy up / Scatter as a fourth),
+ * a highlight that follows the pages as they slide (with your finger, mid-swipe), and beside it the round
+ * + sticker with bunny ears that writes today (or edits it, green).
  */
 export function NavBar() {
   const theme = useTheme();
-  const { colors, spacing, sizes, typography, motion } = theme;
+  const { colors, spacing, sizes, motion } = theme;
+  const nav = theme.nav;
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const { action } = useContext(NavBarContext);
@@ -150,11 +134,18 @@ export function NavBar() {
     transform: [{ translateY: (1 - shown.get()) * (sizes.navBar + insets.bottom + spacing.xl) }],
   }));
 
-  const onHome = pathname === '/';
-  const onYears = pathname === '/years';
-  const onSettings = pathname === '/settings';
+  const h = sizes.navBar;
+  const d = sizes.navCenter;
+  const gap = spacing.sm;
+  const stripW = Math.max(0, w - d - gap);
+  const slot = stripW / (PAGES.length + (action ? 1 : 0));
+  const pillW = Math.max(0, slot - spacing.sm * 2);
+  const on = PAGES.findIndex((p) => p.path === pathname);
+  // The highlight sits wherever the pages are, so it slides along with a swipe (hidden on pages outside the bar).
+  const pillStyle = useAnimatedStyle(() => ({ transform: [{ translateX: pagerPosition.get() * slot + (slot - pillW) / 2 }] }));
+
   const go = (path: '/' | '/years' | '/settings') => {
-    if (path === '/' && onHome) {
+    if (path === '/' && pathname === '/') {
       homeTopListeners.forEach((l) => l());
       return;
     }
@@ -163,14 +154,6 @@ export function NavBar() {
   };
   const enter = reduceMotion ? undefined : FadeIn.duration(motion.imageFadeMs);
   const exit = reduceMotion ? undefined : FadeOut.duration(motion.imageFadeMs);
-  const layout = reduceMotion ? undefined : LinearTransition.springify().damping(18);
-
-  const h = sizes.navBar;
-  const d = sizes.navCenter;
-  const cx = w / 2;
-  const cy = d * SINK;
-  const notchR = d / 2 + NOTCH_GAP;
-  const nav = theme.nav;
   const fill = written ? colors.green : nav.plus;
 
   return (
@@ -179,87 +162,66 @@ export function NavBar() {
       onLayout={(e) => setW(e.nativeEvent.layout.width)}
       style={[styles.wrap, { left: spacing.gutter, right: spacing.gutter, bottom: insets.bottom + spacing.sm, height: h }, barStyle]}
     >
-      {w > 0 ? (
-        <Svg pointerEvents="none" width={w} height={h + SHADOW_DROP} style={styles.shape}>
+      {stripW > 0 ? (
+        <Svg pointerEvents="none" width={stripW} height={h + SHADOW_DROP} style={styles.shape}>
           {/* Paper shadow, the strip itself, and a dashed stitch just inside its edge. */}
-          <Path d={stripPath(w, h, cx, cy, notchR)} fill={nav.shadow} transform={`translate(0 ${SHADOW_DROP})`} />
-          <Path d={stripPath(w, h, cx, cy, notchR)} fill={nav.strip} stroke={nav.edge} strokeWidth={1} />
-          <Path d={stripPath(w, h, cx, cy, notchR, STITCH_INSET)} fill="none" stroke={nav.stitch} strokeWidth={1.4} strokeDasharray="5 4" strokeLinecap="round" />
+          <Path d={stripPath(stripW, h)} fill={nav.shadow} transform={`translate(0 ${SHADOW_DROP})`} />
+          <Path d={stripPath(stripW, h)} fill={nav.strip} stroke={nav.edge} strokeWidth={1} />
+          <Path d={stripPath(stripW, h, STITCH_INSET)} fill="none" stroke={nav.stitch} strokeWidth={1.4} strokeDasharray="5 4" strokeLinecap="round" />
         </Svg>
       ) : null}
       <WashiTape width={sizes.tapeHeight * 2.4} color={nav.tape} color2={nav.rim} pattern="stripes" angle={-24} style={[styles.tape, { left: -spacing.md, top: -spacing.sm }]} />
-      <WashiTape width={sizes.tapeHeight * 2.4} color={nav.tape2} color2={nav.rim} pattern="dots" angle={22} style={[styles.tape, { right: -spacing.md, top: -spacing.sm }]} />
+      <WashiTape width={sizes.tapeHeight * 2.4} color={nav.tape2} color2={nav.rim} pattern="dots" angle={22} style={[styles.tape, { left: stripW - sizes.tapeHeight * 2.4 + spacing.md, top: -spacing.sm }]} />
 
-      <View style={[styles.bar, { height: h, paddingHorizontal: spacing.sm }]}>
-        <Animated.View layout={layout} style={styles.side}>
-          <Tab icon={onHome ? 'home' : 'home-outline'} label="Home" active={onHome}  onPress={() => go('/')} />
-          <Tab icon={onYears ? 'library' : 'library-outline'} label="Years" active={onYears}  onPress={() => go('/years')} />
-        </Animated.View>
+      {/* Three equal places, and the highlight under the one you're on. */}
+      <View style={[styles.slots, { width: stripW, height: h }]}>
+        {on >= 0 && pillW > 0 ? (
+          <Animated.View pointerEvents="none" style={[styles.pill, { top: PILL_MARGIN, width: pillW, height: h - PILL_MARGIN * 2, borderRadius: (h - PILL_MARGIN * 2) / 2.4, backgroundColor: nav.active }, pillStyle]} />
+        ) : null}
+        {PAGES.map((page, i) => (
+          <Tab key={page.path} icon={i === on ? page.iconOn : page.icon} label={page.label} active={i === on} width={slot} onPress={() => go(page.path)} />
+        ))}
+        {/* A page's own button takes a fourth, equal place. */}
+        {action ? (
+          <Animated.View key={action.key} entering={enter} exiting={exit}>
+            <Tab icon={action.icon} label={action.label} active={false} accent={nav.tape} width={slot} onPress={action.onPress} />
+          </Animated.View>
+        ) : null}
+      </View>
 
-        {/* The + sticker sitting in the notch, bunny ears peeking over it. What it does is written under it. */}
-        <View style={[styles.middle, { width: notchR * 2, height: h, paddingBottom: spacing.xs }]}>
-          <View pointerEvents="none" style={[styles.ears, { top: cy - d / 2 - d * 0.3, width: d }]}>
-            {[-1, 1].map((side) => (
-              <View
-                key={side}
-                style={[
-                  styles.ear,
-                  { width: d * 0.24, height: d * 0.5, borderRadius: d * 0.12, backgroundColor: nav.rim, borderColor: nav.edge, transform: [{ rotate: `${side * 16}deg` }] },
-                ]}
-              >
-                <View style={{ flex: 1, margin: d * 0.05, borderRadius: d * 0.1, backgroundColor: colors.buddyEar }} />
-              </View>
-            ))}
-          </View>
-          <PressableScale
-            onPress={() => router.push('/entry')}
-            accessibilityRole="button"
-            accessibilityLabel={written ? "Edit today's memory" : "Write today's memory"}
-            style={[
-              styles.center,
-              {
-                position: 'absolute',
-                top: cy - d / 2,
-                width: d,
-                height: d,
-                borderRadius: d / 2,
-                backgroundColor: fill,
-                borderWidth: 4,
-                borderColor: nav.rim,
-                boxShadow: theme.shadow(fill, 1.2),
-              },
-            ]}
-          >
-            <Ionicons name={written ? 'create' : 'add'} size={sizes.icon * (written ? 1.2 : 1.5)} color={nav.rim} />
-          </PressableScale>
-          <Text numberOfLines={1} style={[typography.small, { color: nav.ink, alignSelf: 'stretch', textAlign: 'center' }]}>
-            {written ? 'edit ✓' : 'write'}
-          </Text>
+      {/* The + sticker with bunny ears, at the end of the strip. */}
+      <View style={[styles.plusWrap, { left: stripW + gap, width: d, height: h }]}>
+        <View pointerEvents="none" style={[styles.ears, { top: (h - d) / 2 - d * 0.32, width: d }]}>
+          {[-1, 1].map((side) => (
+            <View
+              key={side}
+              style={[
+                styles.ear,
+                { width: d * 0.24, height: d * 0.5, borderRadius: d * 0.12, backgroundColor: nav.rim, borderColor: nav.edge, transform: [{ rotate: `${side * 16}deg` }] },
+              ]}
+            >
+              <View style={{ flex: 1, margin: d * 0.05, borderRadius: d * 0.1, backgroundColor: colors.buddyEar }} />
+            </View>
+          ))}
         </View>
-
-        <Animated.View layout={layout} style={styles.side}>
-          {action ? (
-            <Animated.View key={action.key} entering={enter} exiting={exit} style={{ flex: 1 }}>
-              <Tab icon={action.icon} label={action.label}  onPress={action.onPress} />
-            </Animated.View>
-          ) : null}
-          <Tab icon={onSettings ? 'settings' : 'settings-outline'} label="Settings" active={onSettings}  onPress={() => go('/settings')} />
-        </Animated.View>
+        <PressableScale
+          onPress={() => router.push('/entry')}
+          accessibilityRole="button"
+          accessibilityLabel={written ? "Edit today's memory" : "Write today's memory"}
+          style={[
+            styles.center,
+            { width: d, height: d, borderRadius: d / 2, backgroundColor: fill, borderWidth: 4, borderColor: nav.rim, boxShadow: theme.shadow(fill, 1.2) },
+          ]}
+        >
+          <Ionicons name={written ? 'create' : 'add'} size={sizes.icon * (written ? 1.2 : 1.5)} color={nav.rim} />
+        </PressableScale>
       </View>
     </Animated.View>
   );
 }
 
-/** Space between the page highlight and the strip's edge, above and below alike. */
-const PILL_MARGIN = 9;
-const PILL_WIDTH = 86;
-
-function Tab({ icon, label, active = false, onPress }: { icon: IconName; label: string; active?: boolean; onPress: () => void }) {
-  const { nav, typography, sizes, spacing } = useTheme();
-  const [size, setSize] = useState({ w: 0, h: 0 });
-  const pillH = size.h - PILL_MARGIN * 2;
-  // The same width for every tab, however much room the tab has.
-  const pillW = Math.min(size.w - spacing.xs * 2, PILL_WIDTH);
+function Tab({ icon, label, active, width, accent, onPress }: { icon: IconName; label: string; active: boolean; width: number; accent?: string; onPress: () => void }) {
+  const { nav, typography, sizes } = useTheme();
   return (
     <PressableScale
       onPress={() => {
@@ -270,16 +232,9 @@ function Tab({ icon, label, active = false, onPress }: { icon: IconName; label: 
       accessibilityRole="button"
       accessibilityState={{ selected: active }}
       accessibilityLabel={label}
-      onLayout={(e) => setSize({ w: e.nativeEvent.layout.width, h: e.nativeEvent.layout.height })}
-      style={[styles.tab, { height: sizes.navBar }]}
+      style={[styles.tab, { width, height: sizes.navBar }]}
     >
-      {/* The page you're on sits on a soft pill of the year's color, centered in the strip. */}
-      {active && size.w > 0 ? (
-        <Svg pointerEvents="none" width={size.w} height={size.h} style={StyleSheet.absoluteFill}>
-          <Rect x={(size.w - pillW) / 2} y={PILL_MARGIN} width={pillW} height={pillH} rx={pillH / 2.4} ry={pillH / 2.4} fill={nav.active} />
-        </Svg>
-      ) : null}
-      <Ionicons name={icon} size={sizes.icon} color={active ? nav.ink : nav.inkMuted} />
+      <Ionicons name={icon} size={sizes.icon} color={accent ?? (active ? nav.ink : nav.inkMuted)} />
       {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
       <Text numberOfLines={1} style={[typography.small, { color: active ? nav.ink : nav.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
         {label}
@@ -291,11 +246,11 @@ function Tab({ icon, label, active = false, onPress }: { icon: IconName; label: 
 const styles = StyleSheet.create({
   wrap: { position: 'absolute' },
   shape: { position: 'absolute', left: 0, top: 0 },
-  bar: { flexDirection: 'row', alignItems: 'center' },
-  side: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly' },
-  tab: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  slots: { position: 'absolute', left: 0, top: 0, flexDirection: 'row', alignItems: 'center' },
+  pill: { position: 'absolute', left: 0 },
+  tab: { alignItems: 'center', justifyContent: 'center' },
+  plusWrap: { position: 'absolute', top: 0, alignItems: 'center', justifyContent: 'center' },
   center: { alignItems: 'center', justifyContent: 'center' },
-  middle: { alignItems: 'center', justifyContent: 'flex-end' },
   ears: { position: 'absolute', flexDirection: 'row', justifyContent: 'center', gap: 14 },
   ear: { borderWidth: 1, overflow: 'hidden' },
   tape: { position: 'absolute', zIndex: 2 },

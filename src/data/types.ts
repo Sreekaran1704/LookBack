@@ -21,6 +21,13 @@ export interface Entry {
   /** Style palette names (see theme/yearColors STYLE_PALETTES). null = the entry's year color. */
   stickerColor: string | null;
   tapeColor: string | null;
+  /**
+   * A voice note: its path RELATIVE to the document directory ('voices/<uuid>.m4a'; resolve with
+   * resolveVoiceUri()), its waveform (bars 0–1, measured while recording) and its length in ms.
+   */
+  voicePath: string | null;
+  voiceWave: number[] | null;
+  voiceMs: number | null;
 }
 
 export interface EntryStyle {
@@ -37,12 +44,20 @@ export type PhotoChange =
   /** sourceUri is a temporary picker/camera URI; it will be copied into app storage. */
   | { kind: 'set'; sourceUri: string };
 
+export type VoiceChange =
+  | { kind: 'keep' }
+  | { kind: 'remove' }
+  /** sourceUri is the recorder's temporary file; it will be copied into app storage. */
+  | { kind: 'set'; sourceUri: string; wave: number[]; ms: number };
+
 export interface SaveEntryInput {
   /** Id to use when this creates a new entry (so a live preview matches what gets saved). Ignored on update. */
   id?: string;
   localDate: LocalDate;
   text: string;
   photo: PhotoChange;
+  /** Left out = keep the current voice note. */
+  voice?: VoiceChange;
   /** Fields left out keep their current value. */
   style?: Partial<EntryStyle>;
 }

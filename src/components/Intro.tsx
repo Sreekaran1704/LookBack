@@ -122,6 +122,9 @@ export function Intro({ entries, today, onDone }: Props) {
         sticker: null,
         stickerColor: null,
         tapeColor: null,
+    voicePath: null,
+    voiceWave: null,
+    voiceMs: null,
       })),
     ];
     const stagger = motion.introRainMs / total;

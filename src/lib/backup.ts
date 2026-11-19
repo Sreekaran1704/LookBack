@@ -2,10 +2,11 @@
  * Backup format and merge rules. Pure module (no React Native imports), so it can be tested and
  * reused by any storage provider (Google Drive first).
  *
- * A backup is one manifest file (every entry as JSON) plus the photo files, named as they are on
- * the phone. Restoring merges rather than overwrites, so backing up from two phones is safe.
+ * A backup is one manifest file (every entry as JSON) plus the photo and voice files, named as they
+ * are on the phone. Restoring merges rather than overwrites, so backing up from two phones is safe.
  */
 import { isValidLocalDate, type LocalDate } from './dates';
+import { parseWave } from './voice';
 
 export const BACKUP_VERSION = 1;
 export const MANIFEST_NAME = 'yearbook.json';
@@ -26,6 +27,10 @@ export interface BackupEntry {
   /** Added after v1 shipped; older backups simply lack them (read as null). */
   stickerColor: string | null;
   tapeColor: string | null;
+  /** Voice note (added later; older backups lack it, read as null): 'voices/<name>', its waveform, its length. */
+  voicePath: string | null;
+  voiceWave: number[] | null;
+  voiceMs: number | null;
 }
 
 /** A memory the person deleted, kept so a sync doesn't bring it back from another copy. */
@@ -82,6 +87,9 @@ export function parseManifest(json: string): BackupManifest {
       sticker: strOrNull(e.sticker),
       stickerColor: strOrNull(e.stickerColor),
       tapeColor: strOrNull(e.tapeColor),
+      voicePath: strOrNull(e.voicePath),
+      voiceWave: parseWave(e.voiceWave),
+      voiceMs: typeof e.voiceMs === 'number' && Number.isFinite(e.voiceMs) ? e.voiceMs : null,
     });
   }
   const deleted: Tombstone[] = [];
@@ -105,7 +113,7 @@ export interface MergePlan {
   deleted: Tombstone[];
   /** Deletions the phone hasn't recorded yet. */
   newLocalTombstones: Tombstone[];
-  /** Photos of deleted memories that no kept memory uses: remove them from the backup. */
+  /** Photos and voice notes of deleted memories that no kept memory uses: remove them from the backup. */
   orphanPhotos: string[];
 }
 
@@ -163,12 +171,13 @@ export function mergeEntries(
   const deleted = [...tombstones].map(([id, deletedAt]) => ({ id, deletedAt })).sort((a, b) => a.id.localeCompare(b.id));
   const localKnown = new Map(localDeleted.map((t) => [t.id, t.deletedAt]));
   const remoteKnown = new Map(remoteDeleted.map((t) => [t.id, t.deletedAt]));
-  const keptPhotos = new Set(merged.map((e) => e.photoPath));
+  const keptFiles = new Set(merged.flatMap(entryFiles));
   const orphanPhotos = [
     ...new Set(
       [...local, ...remote]
-        .filter((e) => !keptIds.has(e.id) && isDeleted(e) && e.photoPath !== null && !keptPhotos.has(e.photoPath))
-        .map((e) => e.photoPath as string),
+        .filter((e) => !keptIds.has(e.id) && isDeleted(e))
+        .flatMap(entryFiles)
+        .filter((p) => !keptFiles.has(p)),
     ),
   ];
 
@@ -186,7 +195,12 @@ export function mergeEntries(
   };
 }
 
-/** File name of a stored photo path ('photos/abc.jpg' → 'abc.jpg'). */
+/** The files a memory keeps beside the manifest: its photo and its voice note. */
+export function entryFiles(e: BackupEntry): string[] {
+  return [e.photoPath, e.voicePath].filter((p): p is string => p !== null && p !== '');
+}
+
+/** File name of a stored photo or voice path ('photos/abc.jpg' → 'abc.jpg'). */
 export function photoName(photoPath: string): string {
   return photoPath.split('/').pop() ?? photoPath;
 }
@@ -198,9 +212,9 @@ export interface PhotoPlan {
   upload: string[];
 }
 
-/** Which photo files have to move, given what each side already holds (by file name). */
+/** Which photo and voice files have to move, given what each side already holds (by file name). */
 export function planPhotos(merged: readonly BackupEntry[], localNames: ReadonlySet<string>, remoteNames: ReadonlySet<string>): PhotoPlan {
-  const paths = [...new Set(merged.map((e) => e.photoPath).filter((p): p is string => p !== null))];
+  const paths = [...new Set(merged.flatMap(entryFiles))];
   return {
     download: paths.filter((p) => !localNames.has(photoName(p)) && remoteNames.has(photoName(p))),
     upload: paths.filter((p) => localNames.has(photoName(p)) && !remoteNames.has(photoName(p))),

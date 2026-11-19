@@ -1,4 +1,4 @@
-import { memo, useEffect, useMemo } from 'react';
+import { memo, useEffect, useMemo, useState } from 'react';
 import { Pressable, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   useAnimatedStyle,
@@ -13,7 +13,6 @@ import { resolvePhotoUri, type Entry } from '../../data';
 import { formatDisplayDate, parseLocalDate } from '../../lib/dates';
 import { tapHaptic } from '../../lib/haptics';
 import { lookForEntry, type EntryLook } from '../../lib/seeded';
-import { firstLine } from '../../notifications/planner';
 import { paletteByName, useTheme } from '../../theme';
 import { DateStamp } from './DateStamp';
 import { PaperClip } from './PaperClip';
@@ -24,7 +23,9 @@ import { deg } from './shared';
 import { Sticker } from './Sticker';
 import { TicketStub } from './TicketStub';
 import { TornNote } from './TornNote';
+import type { VoicePlayer } from './Waveform';
 import { WashiTape } from './WashiTape';
+import type { NoteEditor } from './WritableText';
 
 export function useLook(entry: Entry): EntryLook {
   const { scrap } = useTheme();
@@ -32,7 +33,7 @@ export function useLook(entry: Entry): EntryLook {
     () => lookForEntry(entry, scrap.maxTilt, scrap.maxOffset),
     // Only the fields that affect the look.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [entry.id, entry.text, entry.photoPath, entry.objectType, entry.tapePattern, entry.sticker, entry.tapeColor, scrap.maxTilt, scrap.maxOffset],
+    [entry.id, entry.text, entry.photoPath, entry.voicePath, entry.objectType, entry.tapePattern, entry.sticker, entry.tapeColor, scrap.maxTilt, scrap.maxOffset],
   );
 }
 
@@ -59,15 +60,15 @@ interface Props {
   /** Make the tape (or clip/pin) and the sticker tappable, e.g. to pick another one on the writing page. A missing sticker shows a dashed spot to tap. */
   onPressTape?: () => void;
   onPressSticker?: () => void;
+  /** A polaroid with words on its back: show the back (it turns over). */
+  flipped?: boolean;
+  /** Write on the object itself (the writing page): the note, the ticket, or the polaroid's strip and back. */
+  editor?: NoteEditor;
+  /** Listen to the voice note on it (the memory page). Its waveform fills in as it plays, so it isn't a texture. */
+  voicePlayer?: VoicePlayer;
   style?: StyleProp<ViewStyle>;
 }
 
-/** A note stuck to a photo: its width (share of the photo), how far it overlaps the photo and hangs out past its side. */
-const PHOTO_NOTE_RATIO = 0.72;
-const PHOTO_NOTE_OVERLAP = 0.16;
-const PHOTO_NOTE_OUT = 0.12;
-const PHOTO_NOTE_TILT = 3;
-const PHOTO_NOTE_LINES = 4;
 
 /** An entry as a physical scrapbook object, with its fastener and sticker. */
 export const ScrapObject = memo(function ScrapObject({
@@ -85,6 +86,9 @@ export const ScrapObject = memo(function ScrapObject({
   onPress,
   onPressTape,
   onPressSticker,
+  flipped = false,
+  editor,
+  voicePlayer,
   style,
 }: Props) {
   const theme = useTheme();
@@ -97,6 +101,19 @@ export const ScrapObject = memo(function ScrapObject({
   const tapePalette = paletteByName(entry.tapeColor) ?? palette;
   const stickerPalette = paletteByName(entry.stickerColor) ?? palette;
   const reduceMotion = useReducedMotion();
+
+  // A turn-over animates inside the object: no texture while it turns (and its hearts float up).
+  const [shownFlip, setShownFlip] = useState(flipped);
+  const [turning, setTurning] = useState(false);
+  if (shownFlip !== flipped) {
+    setShownFlip(flipped);
+    setTurning(true);
+  }
+  useEffect(() => {
+    if (!turning) return;
+    const t = setTimeout(() => setTurning(false), motion.flipMs + motion.flipHeartsMs);
+    return () => clearTimeout(t);
+  }, [turning, motion.flipMs, motion.flipHeartsMs]);
 
   const pressed = useSharedValue(0);
   const wiggle = useSharedValue(0);
@@ -119,14 +136,31 @@ export const ScrapObject = memo(function ScrapObject({
   const uri = photoUri !== undefined ? photoUri : entry.photoPath ? resolvePhotoUri(entry.photoPath) : null;
   const notePapers = [colors.paper, colors.paperWhite, colors.blush, palette.tint];
   const notePaper = notePapers[Math.floor(look.sizeJitter * notePapers.length)] ?? colors.paper;
-  // A photo with words: the words go on a little note stuck to the photo; the polaroid keeps the date.
-  const photoNote = uri !== null && entry.text.trim().length > 0 && (look.objectType === 'polaroid' || look.objectType === 'tapedPhoto');
-  const caption = photoNote ? formatDisplayDate(entry.localDate) : firstLine(entry.text, 28) || formatDisplayDate(entry.localDate);
+  const text = editor ? editor.value : entry.text;
+  // A photo with words is always a polaroid: the words go on its strip, or on its back with "P.T.O" on the front.
+  // A voice note is always a polaroid: with a photo, its waveform goes on the strip under it; without one,
+  // the waveform is the picture.
+  const hasVoice = entry.voicePath !== null;
+  const objectType = hasVoice || (uri !== null && text.trim().length > 0) ? 'polaroid' : look.objectType;
+  const voice = hasVoice ? { wave: entry.voiceWave, ms: entry.voiceMs, player: voicePlayer } : undefined;
 
   let body: React.ReactNode;
-  switch (look.objectType) {
+  switch (objectType) {
     case 'polaroid':
-      body = <Polaroid width={width} uri={uri} caption={caption} tint={palette.primary} develop={develop} lift={lift} />;
+      body = (
+        <Polaroid
+          width={width}
+          uri={uri}
+          words={text}
+          date={formatDisplayDate(entry.localDate)}
+          tint={palette.primary}
+          develop={develop}
+          lift={lift}
+          flipped={flipped}
+          editor={editor}
+          voice={voice}
+        />
+      );
       break;
     case 'tapedPhoto':
       body = uri ? (
@@ -137,12 +171,13 @@ export const ScrapObject = memo(function ScrapObject({
       body = (
         <TicketStub
           width={width}
-          text={entry.text}
+          text={text}
           paper={palette.tint}
           accent={palette.primary}
           stubLabel={String(year)}
           serial={String(look.pathSeed % 10000).padStart(4, '0')}
           lift={lift}
+          editor={editor}
         />
       );
       break;
@@ -150,7 +185,7 @@ export const ScrapObject = memo(function ScrapObject({
       body = (
         <TornNote
           width={width}
-          text={entry.text}
+          text={text}
           paper={notePaper}
           tint={palette.primary}
           seed={look.pathSeed}
@@ -158,6 +193,7 @@ export const ScrapObject = memo(function ScrapObject({
           folded={look.folded}
           numberOfLines={numberOfLines}
           lift={lift}
+          editor={editor}
         />
       );
       break;
@@ -205,26 +241,10 @@ export const ScrapObject = memo(function ScrapObject({
   };
   const showSticker = look.sticker !== null;
 
-  // The note hangs off the lower right of the photo, turned the other way, held by a small strip of tape.
-  const noteW = width * PHOTO_NOTE_RATIO;
-  const attached = photoNote ? (
-    <View pointerEvents="none" style={{ alignSelf: 'flex-end', width: noteW, marginTop: -width * PHOTO_NOTE_OVERLAP, marginRight: -width * PHOTO_NOTE_OUT, transform: [{ rotate: deg(-look.tilt * 1.5 + PHOTO_NOTE_TILT) }] }}>
-      <TornNote width={noteW} text={entry.text.trim()} paper={notePaper === colors.paperWhite ? colors.paper : notePaper} tint={palette.primary} seed={look.pathSeed + 7} ruled numberOfLines={numberOfLines ?? PHOTO_NOTE_LINES} lift={lift * 0.8} />
-      <WashiTape
-        width={noteW * 0.4}
-        color={tapePalette.primary}
-        color2={tapePalette.secondary}
-        pattern={look.tapePattern}
-        angle={-look.tapeAngle - 10}
-        style={{ position: 'absolute', top: -sizes.tapeHeight / 2, left: noteW * 0.08 }}
-      />
-    </View>
-  ) : null;
 
   const drawn = (
     <Animated.View style={[{ width, transform: [{ rotate: deg(look.tilt) }] }, liftStyle]}>
       {body}
-      {attached}
       {fastener}
       {showSticker && look.sticker ? (
         <Animated.View style={[stickerPos, stickerStyle]} pointerEvents="none">
@@ -273,8 +293,13 @@ export const ScrapObject = memo(function ScrapObject({
     </Animated.View>
   );
 
-  // A swaying clip or a flickering tape animates inside, which would re-draw the texture every frame.
-  const content = raster && !sway && !tapeFlicker && !develop ? <Raster>{drawn}</Raster> : drawn;
+  // Kept as a texture whenever nothing inside it moves, so dropping in or sliding is just moving a picture (drawn live,
+  // a photo polaroid with its film and shadows cost 14–26 ms a frame). Off while something inside animates: a swaying
+  // clip, a flickering tape, a developing photo, typing, the voice note playing, or a turn-over. Always the same view,
+  // only the flag changes, so nothing inside is rebuilt.
+  const swaying = sway && look.fastener === 'clip';
+  const textured = raster && !swaying && !tapeFlicker && !develop && !editor && !voicePlayer?.playing && !turning;
+  const content = <Raster enabled={textured}>{drawn}</Raster>;
 
   if (!onPress) return <View style={style}>{content}</View>;
   return (

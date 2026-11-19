@@ -3,6 +3,7 @@ import { Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 import { raggedOffsets } from '../../lib/seeded';
 import { useTheme } from '../../theme';
+import { WritableText, type NoteEditor } from './WritableText';
 
 interface Props {
   width: number;
@@ -16,6 +17,8 @@ interface Props {
   footer?: string;
   numberOfLines?: number;
   lift?: number;
+  /** Write on the note itself (the writing page). */
+  editor?: NoteEditor;
 }
 
 /** Notes up to this many characters are written in handwriting; longer ones use the readable body font. */
@@ -42,6 +45,7 @@ export const TornNote = memo(function TornNote({
   footer,
   numberOfLines,
   lift = 1,
+  editor,
 }: Props) {
   const theme = useTheme();
   const { colors, sizes, spacing, typography } = theme;
@@ -78,9 +82,7 @@ export const TornNote = memo(function TornNote({
             <Line x1={pad * 1.6} x2={pad * 1.6} y1={0} y2={height} stroke={colors.marginLine} strokeWidth={1} />
           </Svg>
         ) : null}
-        <Text style={[textStyle, { color: colors.ink, paddingLeft: ruled ? pad : 0 }]} numberOfLines={numberOfLines}>
-          {text}
-        </Text>
+        <WritableText text={text} editor={editor} style={[textStyle, { color: colors.ink, paddingLeft: ruled ? pad : 0 }]} numberOfLines={numberOfLines} />
         {footer ? (
           <Text style={[typography.handSmall, { color: colors.inkMuted, textAlign: 'right', marginTop: spacing.xs }]}>
             {footer}

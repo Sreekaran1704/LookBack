@@ -2,9 +2,11 @@ import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import Animated, { FadeIn, SlideInRight, SlideOutLeft, useReducedMotion } from 'react-native-reanimated';
+import Animated, { useReducedMotion } from 'react-native-reanimated';
+import { stepIn, stepOut } from '../components/transitions';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleButton, PillButton } from '../components/Buttons';
+import { PillButton } from '../components/Buttons';
+import { ActionBar } from '../components/Screen';
 import { PaperPicker, SlidingToggle } from '../components/Pickers';
 import { Buddy, type BuddyMood } from '../components/scrapbook/Buddy';
 import { Confetti } from '../components/scrapbook/Confetti';
@@ -63,8 +65,8 @@ export default function WelcomeScreen() {
     else router.back();
   };
 
-  const entering = reduceMotion ? FadeIn : SlideInRight.springify().damping(20);
-  const exiting = reduceMotion ? undefined : SlideOutLeft.duration(theme.motion.screenMs);
+  const entering = stepIn(reduceMotion);
+  const exiting = stepOut(reduceMotion);
   const who = name.trim();
 
   return (
@@ -72,7 +74,7 @@ export default function WelcomeScreen() {
       <PaperBackground variant="dots" desk />
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={[styles.top, { paddingTop: insets.top + spacing.md, paddingHorizontal: spacing.gutter, gap: spacing.md }]}>
-          {step > 0 && current !== 'done' ? <CircleButton icon="chevron-back" accessibilityLabel="Back" onPress={back} /> : <View style={{ width: sizes.circleButton }} />}
+          <View style={{ width: sizes.circleButton }} />
           {/* Progress: a row of little hearts, filled as you go. */}
           <View style={[styles.row, { flex: 1, justifyContent: 'center', gap: spacing.xs }]} accessibilityLabel={`Step ${step + 1} of ${STEPS.length}`}>
             {STEPS.map((s, i) => (
@@ -131,6 +133,8 @@ export default function WelcomeScreen() {
             ) : null}
           </Animated.View>
         </ScrollView>
+        {/* Back, at the foot where a thumb reaches it. */}
+        {step > 0 && current !== 'done' ? <ActionBar withNavBar={false} actions={[{ key: 'back', icon: 'chevron-back', label: 'Back', tint: palette.primary, onPress: back }]} /> : null}
       </KeyboardAvoidingView>
       {current === 'done' ? <Confetti colors={[palette.primary, palette.secondary, colors.amber, colors.green]} burstKey={step} /> : null}
     </View>

@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
+import { holdPager } from '../pagerPosition';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import Svg, { Path, Rect } from 'react-native-svg';
@@ -133,7 +134,8 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
           </Text>
         </View>
         <GestureDetector gesture={pan}>
-          <View style={StyleSheet.absoluteFill}>
+          {/* While a finger is on the deck the pages hold still: the swipe moves the letter, not the whole page. */}
+          <View style={StyleSheet.absoluteFill} onTouchStart={() => holdPager(true)} onTouchEnd={() => holdPager(false)} onTouchCancel={() => holdPager(false)}>
             {entries.map((entry, index) => {
               const pos = order.indexOf(index);
               return (

@@ -31,6 +31,8 @@ interface Props {
   showLabel?: boolean;
   /** Color of the age line (it sits on wood inside the cupboard). */
   labelColor?: string;
+  /** Only the front cover, no pages or shadow under it (the opening book turns it on its own). */
+  coverOnly?: boolean;
 }
 
 /** Window position and size of a diary (the book itself, without the age line). */
@@ -84,6 +86,7 @@ export const AlbumStack = memo(function AlbumStack({
   raster = true,
   showLabel = true,
   labelColor,
+  coverOnly = false,
 }: Props) {
   const theme = useTheme();
   const { colors, sizes, radii, spacing, typography, motion, scrap } = theme;
@@ -153,7 +156,7 @@ export const AlbumStack = memo(function AlbumStack({
         ) : null}
 
         {/* Contact shadow where the diary rests on the page. */}
-        <View
+        {coverOnly ? null : <View
           style={{
             position: 'absolute',
             left: spacing.sm,
@@ -164,10 +167,10 @@ export const AlbumStack = memo(function AlbumStack({
             backgroundColor: withAlpha(palette.ink, 0.28),
             boxShadow: `0px 0px ${spacing.md}px ${withAlpha(palette.ink, 0.35)}`,
           }}
-        />
+        />}
 
         {/* Page edges sticking out under the cover. */}
-        {Array.from({ length: PAGE_LAYERS }, (_, i) => PAGE_LAYERS - i).map((layer) => (
+        {coverOnly ? null : Array.from({ length: PAGE_LAYERS }, (_, i) => PAGE_LAYERS - i).map((layer) => (
           <View
             key={layer}
             style={{

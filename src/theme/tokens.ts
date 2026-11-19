@@ -318,21 +318,33 @@ export function paperShadow(tint: string, lift = 1, dark = false): string {
 
 export const motion = {
   gentle: { duration: 320, dampingRatio: 1 },
-  drop: { duration: 460, dampingRatio: 0.7 },
+  drop: { duration: 460, dampingRatio: 0.78 },
   fan: { duration: 420, dampingRatio: 0.8 },
   lift: { duration: 280, dampingRatio: 0.85 },
   press: { duration: 220, dampingRatio: 0.9 },
-  pop: { duration: 380, dampingRatio: 0.55 },
+  /** A friendly pop with one soft overshoot, not a wobble. */
+  pop: { duration: 380, dampingRatio: 0.68 },
   dropStaggerMs: 75,
   dropFromY: -70,
   dropMaxAnimated: 12,
   pressedScale: 1.03,
+  /** Buttons dip a little under the finger (quickly), then ease back without a bounce. */
+  buttonPressScale: 0.95,
+  buttonPressInMs: 90,
+  buttonRelease: { duration: 320, dampingRatio: 1 },
   pressedLift: -3,
   tapeTug: -2,
   liftedScale: 1.3,
   statusPillVisibleMs: 2200,
   statusPillOffset: 24,
   imageFadeMs: 200,
+  /** A polaroid turning over to its back: the turn, how high it lifts and how far it leans mid-air. */
+  flipMs: 760,
+  flipLiftPx: 22,
+  flipScale: 0.1,
+  flipLeanDeg: 5,
+  /** Little hearts that pop up when it lands. */
+  flipHeartsMs: 900,
   photoDevelopMs: 1400,
   swayDeg: 1.6,
   swayMs: 2600,
@@ -356,7 +368,29 @@ export const motion = {
   introExitMs: 420,
   introReducedHoldMs: 700,
   /** A diary leaving the shelf: pull out, float to the middle, cover opens (stars burst), then it dissolves into its page. */
-  bookFlight: { pullMs: 220, travelMs: 560, turnMs: 360, openMs: 420, burstMs: 700, settleMs: 160, readyFallbackMs: 600, diveMs: 460 },
+  bookFlight: {
+    /** Tipped forward and slid out of its row. */
+    pullMs: 300,
+    /** Floats to the middle in an arc, growing. */
+    travelMs: 620,
+    /** Turns, like a real box, from spine to cover. */
+    turnMs: 520,
+    /** The cover swings open on its spine and lies flat; the book slides to centre the spread. */
+    openMs: 820,
+    /** Two pages flutter over after the cover, one after another. */
+    pageMs: 560,
+    pageGapMs: 140,
+    burstMs: 900,
+    settleMs: 220,
+    readyFallbackMs: 700,
+    /** Zooms into the right-hand page until it is the year's page. */
+    diveMs: 640,
+  },
+  /** A sheet or strip easing up from the buttons, and away again (a little quicker). */
+  sheetInMs: 300,
+  sheetOutMs: 200,
+  /** Longest a pushed page waits for "slide finished" before building its heavy parts anyway (Android's slide is ~400–450 ms). */
+  screenFallbackMs: 700,
   /** Push / pop between screens. */
   screenMs: 280,
   /** Cross-fade between the bar's pages (Home, Years, Settings). */

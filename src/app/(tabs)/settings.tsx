@@ -2,17 +2,15 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import DateTimePicker from '@react-native-community/datetimepicker';
 import Constants from 'expo-constants';
 import { router } from 'expo-router';
-import { useCallback, useEffect, useState, type ReactNode } from 'react';
+import { memo, useCallback, useEffect, useState, type ReactNode } from 'react';
 import { Alert, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Svg, { Path } from 'react-native-svg';
 import { PillButton, type IconName } from '../../components/Buttons';
-import { useNavBarSpace } from '../../components/NavBar';
+import { ConfirmSheet } from '../../components/ConfirmSheet';
 import { PaperPicker, SlidingToggle } from '../../components/Pickers';
 import { PressableScale } from '../../components/PressableScale';
-import { HAND_TAIL, PageFooter, Panel, ScreenTitle } from '../../components/Screen';
+import { HAND_TAIL, PageFooter, PageHeader, Panel, usePageContentStyle } from '../../components/Screen';
 import { useStatusPill } from '../../components/StatusPill';
-import { Buddy } from '../../components/scrapbook/Buddy';
 import { PaperBackground } from '../../components/scrapbook/PaperBackground';
 import { DEFAULT_REMINDER, backupRepository, settingsRepository, type BackupStatus } from '../../data';
 import { cycleAppIcon } from '../../device/appIcon';
@@ -38,11 +36,9 @@ const TONES = [
  * Settings, the last page of the notebook: one paper card per topic (you, the look, reminders,
  * backup, about), each with its controls and a line of help inside it, so nothing floats loose.
  */
-export default function SettingsScreen() {
+function SettingsScreen() {
   const theme = useTheme();
-  const { spacing, sizes } = theme;
-  const insets = useSafeAreaInsets();
-  const navSpace = useNavBarSpace();
+  const pageContent = usePageContentStyle();
   const palette = theme.year(parseLocalDate(useToday()).year);
   const { data: profile } = useProfile();
 
@@ -51,14 +47,9 @@ export default function SettingsScreen() {
       <PaperBackground variant="dots" desk />
       <ScrollView
         keyboardShouldPersistTaps="handled"
-        contentContainerStyle={{ paddingTop: insets.top + spacing.lg, paddingBottom: navSpace, paddingHorizontal: spacing.gutter, gap: spacing.xxl }}
+        contentContainerStyle={pageContent}
       >
-        <View style={[styles.row, styles.between, { alignItems: 'flex-end' }]}>
-          <View style={{ flex: 1 }}>
-            <ScreenTitle title="Settings" accent={palette.secondary} />
-          </View>
-          <Buddy mood="peek" accent={palette.primary} size={sizes.buddySmall} />
-        </View>
+        <PageHeader title="Settings" subtitle="make this notebook yours ✿" accent={palette.secondary} buddyAccent={palette.primary} />
 
         <YouCard palette={palette} name={profile?.name ?? ''} />
         <LookCard palette={palette} />
@@ -226,10 +217,11 @@ function ReminderCard({ palette }: { palette: YearPalette }) {
 
 /** Private backup to the person's own Google Drive: connect an account, back up, see when it last ran. */
 function BackupCard({ palette }: { palette: YearPalette }) {
-  const { colors, spacing, typography } = useTheme();
+  const { colors, spacing, typography, sizes } = useTheme();
   const statusPill = useStatusPill();
   const [status, setStatus] = useState<BackupStatus | null>(null);
   const [busy, setBusy] = useState(false);
+  const [askDisconnect, setAskDisconnect] = useState(false);
 
   useEffect(() => {
     const load = () => backupRepository.getStatus().then(setStatus, () => undefined);
@@ -257,11 +249,7 @@ function BackupCard({ palette }: { palette: YearPalette }) {
     run(async () => {
       if (await backupRepository.connect()) await backUp();
     });
-  const disconnect = () =>
-    Alert.alert('Stop backing up?', 'Your memories stay on this phone and in your Drive folder. Only the connection is removed.', [
-      { text: 'Keep', style: 'cancel' },
-      { text: 'Disconnect', style: 'destructive', onPress: () => run(() => backupRepository.disconnect()) },
-    ]);
+  const disconnect = () => setAskDisconnect(true);
 
   const last = status?.lastBackupAt ? formatDisplayDate(toLocalDate(new Date(status.lastBackupAt))) : 'not yet';
   return (
@@ -269,18 +257,20 @@ function BackupCard({ palette }: { palette: YearPalette }) {
       <CardTitle icon="cloud-outline" title="Backup" color={colors.green} />
       {!status ? null : status.account ? (
         <>
-          <Row label="Google Drive">
-            <Text numberOfLines={1} style={[typography.handSmall, { color: colors.inkMuted, flexShrink: 1, textAlign: 'right' }]}>
+          {/* The account goes under its label: beside it, a long address squeezed "Google Drive" onto two lines. */}
+          <View style={{ minHeight: sizes.rowHeight, justifyContent: 'center' }}>
+            <Text style={[typography.hand, { color: colors.ink }]}>Google Drive</Text>
+            <Text numberOfLines={1} style={[typography.handSmall, { color: colors.inkMuted }]}>
               {status.account}
             </Text>
-          </Row>
+          </View>
           <Row label="Last backup" divider>
             <Text style={[typography.hand, { color: colors.ink }]}>{busy ? 'working…' : last}</Text>
           </Row>
-          {/* Both on one line: back up (a green sticker) and disconnect (a quieter coral one). */}
+          {/* Both on one line, the same size: back up (a green sticker) and disconnect (a quiet paper pill). */}
           <View style={[styles.row, { gap: spacing.sm, paddingTop: spacing.md }]}>
             <PillButton label={busy ? 'Saving…' : 'Back up'} icon="cloud-upload-outline" color={colors.green} grow onPress={backUp} disabled={busy} />
-            <PillButton label="Disconnect" icon="unlink-outline" color={colors.inkMuted} outline grow onPress={disconnect} disabled={busy} />
+            <PillButton label="Disconnect" icon="unlink-outline" grow onPress={disconnect} disabled={busy} />
           </View>
           <Help>{`Saved in a "${status.folder}" folder in your Drive, once a day and whenever you tap Back up.`}</Help>
         </>
@@ -293,6 +283,18 @@ function BackupCard({ palette }: { palette: YearPalette }) {
       ) : (
         <Help>Google Drive backup isn&apos;t switched on in this build yet.</Help>
       )}
+      <ConfirmSheet
+        visible={askDisconnect}
+        title="Stop backing up?"
+        message="Your memories stay on this phone and in your Drive folder. Only the connection is removed."
+        confirmLabel="Disconnect"
+        confirmIcon="unlink-outline"
+        onCancel={() => setAskDisconnect(false)}
+        onConfirm={() => {
+          setAskDisconnect(false);
+          run(() => backupRepository.disconnect());
+        }}
+      />
     </Panel>
   );
 }
@@ -380,3 +382,8 @@ const styles = StyleSheet.create({
   between: { justifyContent: 'space-between' },
   badge: { alignItems: 'center', justifyContent: 'center' },
 });
+
+// Memoised, ignoring props: the page slider re-renders every page when the route changes, and the first time the bar
+// opens a page the router hands it a new route object, which rebuilt the whole page once (Settings: 90 ms, the stutter at
+// the end of the first swipe to it). The page reads everything it needs through hooks, so its props never matter.
+export default memo(SettingsScreen, () => true);

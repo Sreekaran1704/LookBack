@@ -231,5 +231,11 @@ many engineering roles now), present this as a strength: spec-writing, reviewing
 
 - Code (public): https://github.com/Sreekaran1704/LookBack
 - Releases with signed APKs: https://github.com/Sreekaran1704/LookBack/releases (v1.0.0, v1.1.0)
-- Demo: screenshots or a screen recording from the phone <!-- add link -->
+- Demo videos (screen recordings from the real phone, edited with handwritten captions in the app's style):
+  - v1.0 launch: `docs/LookBack-demo-linkedin.mp4`
+  - v1.1 "what's new" (61 s, vertical, made for LinkedIn): `~/Documents/LookBack-1.1-demo.mp4`. It covers the
+    paper-matched bar across papers in light and dark, deleting with the bunny's brain-to-shredder animation, and
+    "Back up" with no Google sign-in sheet.
+- LinkedIn posts: one per release (v1.0 launch; v1.1 on the week of real use, the Drive bug and deletion with
+  tombstones). Drafts: `docs/linkedin-post-*.md`.
 - Play Store: not yet published

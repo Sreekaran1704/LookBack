@@ -17,3 +17,8 @@ export function PageActiveGate({ children }: { children: ReactNode }) {
   const focused = useIsFocused();
   return <PageActiveContext.Provider value={focused}>{children}</PageActiveContext.Provider>;
 }
+
+/** For navigators that know which page is in front themselves (the bar's page slider). */
+export function PageActiveProvider({ active, children }: { active: boolean; children: ReactNode }) {
+  return <PageActiveContext.Provider value={active}>{children}</PageActiveContext.Provider>;
+}

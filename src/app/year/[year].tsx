@@ -10,12 +10,9 @@ import Animated, {
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { CircleButton } from '../../components/Buttons';
-import { useNavAction, useNavBarSpace } from '../../components/NavBar';
-import { HAND_TAIL, PageFooter, ScreenTitle, TopBar } from '../../components/Screen';
+import { ActionBar, HAND_TAIL, PageFooter, PageHeader, usePageContentStyle } from '../../components/Screen';
 import { LiteShadows } from '../../components/ThemeProvider';
-import { Buddy, BuddySays } from '../../components/scrapbook/Buddy';
+import { BuddySays } from '../../components/scrapbook/Buddy';
 import { Doodle } from '../../components/scrapbook/Doodle';
 import { PaperBackground } from '../../components/scrapbook/PaperBackground';
 import { Raster } from '../../components/scrapbook/Raster';
@@ -48,6 +45,8 @@ const WINDOW_SCREENS = 1;
 const PREFETCH_TICK_MS = 140;
 /** Scroll position is tracked in steps this tall, so scrolling re-renders only now and then. */
 const WINDOW_STEP = 240;
+/** How long after the pile has stacked up before the (hidden) month headings are built. */
+const HEADERS_AFTER_MS = 600;
 const STACK_TICK_MS = 55;
 /** Where a stacking piece starts falling from, above its spot. */
 const STACK_DROP_PX = 520;
@@ -62,14 +61,18 @@ export default function YearScreen() {
   const { year: yearParam } = useLocalSearchParams<{ year: string }>();
   const year = Number(yearParam);
   const theme = useTheme();
-  const { spacing, sizes, scrap, typography, motion } = theme;
+  const { spacing, scrap, typography, motion } = theme;
   const palette = theme.year(year);
-  const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const { data: entries = [] } = useYearEntries(year);
   const reduceMotion = useReducedMotion();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [tidy, setTidy] = useState(false);
+  /**
+   * The month headings only show once tidied, but drawing all of them (a sticker each) took ~65 ms, right as the
+   * diary handed over to this page. So they are built quietly after the pile has stacked up, or on the first Tidy up.
+   */
+  const [headersReady, setHeadersReady] = useState(false);
   const progress = useSharedValue(0);
   const transitioned = useAfterTransition(motion.screenMs + 80);
   // Opened from the shelf: the book and paper cover this screen until it has drawn; the memories only
@@ -94,6 +97,13 @@ export default function YearScreen() {
   const [ahead, setAhead] = useState(WINDOW_SCREENS);
   const [pileTop, setPileTop] = useState(0);
   const { height: screenH } = useWindowDimensions();
+  // The month headings, once the pile has stacked up (see headersReady).
+  const stacked = arrived && shown >= entries.length;
+  useEffect(() => {
+    if (!stacked || headersReady) return;
+    const timer = setTimeout(() => setHeadersReady(true), HEADERS_AFTER_MS);
+    return () => clearTimeout(timer);
+  }, [stacked, headersReady]);
   useEffect(() => {
     if (!arrived || shown >= entries.length) return;
     const timer = setTimeout(() => setShown((n) => n + STACK_BATCH), STACK_TICK_MS);
@@ -155,33 +165,35 @@ export default function YearScreen() {
 
   const toggle = () => {
     tapHaptic();
+    setHeadersReady(true);
     scroll.current?.scrollTo({ y: 0, animated: !reduceMotion });
     setTidy((t) => !t);
   };
-  // "Tidy up" / "Scatter" sits in the bar at the foot of the page.
-  useNavAction(entries.length > 1 ? { key: 'tidy', icon: tidy ? 'shuffle' : 'albums-outline', label: tidy ? 'Scatter' : 'Tidy up', onPress: toggle } : null);
-  const navSpace = useNavBarSpace();
+  const pageContent = usePageContentStyle({ gap: false, thumbBar: true });
 
   return (
     <View style={{ flex: 1 }} onLayout={() => setDrawn(true)}>
       <PaperBackground variant="dots" desk color={theme.dark ? undefined : palette.tint} />
       <ScrollView
         ref={scroll}
+        style={{ flex: 1 }}
         scrollEventThrottle={64}
         onScroll={(e) => {
           const step = Math.floor(e.nativeEvent.contentOffset.y / WINDOW_STEP) * WINDOW_STEP;
           setWindowTop((prev) => (prev === step ? prev : step));
         }}
-        contentContainerStyle={{
-          paddingTop: insets.top + spacing.md,
-          paddingBottom: navSpace + spacing.xxl,
-          paddingHorizontal: spacing.gutter,
-        }}
+        contentContainerStyle={pageContent}
       >
-        <TopBar left={<CircleButton icon="chevron-back" tint={palette.primary} accessibilityLabel="Back" onPress={() => router.back()} />} />
-        <View style={[styles.header, { marginBottom: spacing.xxl }]}>
-          <ScreenTitle title={String(year)} count={entries.length} accent={palette.secondary} />
-          {entries.length > 0 ? <Buddy mood="peek" accent={palette.primary} size={sizes.buddySmall} bump={tidy ? 1 : 0} /> : null}
+        <View style={{ marginBottom: spacing.xxl }}>
+          <PageHeader
+            title={String(year)}
+            count={entries.length}
+            subtitle={entries.length === 0 ? undefined : tidy ? 'sorted by month ✿' : 'all in one happy pile ✿'}
+            accent={palette.secondary}
+            buddyAccent={palette.primary}
+            buddy={entries.length > 0}
+            bump={tidy ? 1 : 0}
+          />
         </View>
 
         {entries.length === 0 ? (
@@ -189,7 +201,7 @@ export default function YearScreen() {
         ) : (
           <LiteShadows>
           <View style={{ height: tidy ? tidyH : scatterH }} onLayout={(e) => setPileTop(e.nativeEvent.layout.y)}>
-            {(arrived ? groups : []).map((group, i) => (
+            {(arrived && headersReady ? groups : []).map((group, i) => (
               <MonthHeader
                 key={group.month}
                 month={group.month}
@@ -237,7 +249,17 @@ export default function YearScreen() {
         )}
         {entries.length > 0 ? <PageFooter label={`${year} · ${entries.length} ${entries.length === 1 ? 'page' : 'pages'}`} /> : null}
       </ScrollView>
-
+      {/* Back, at the foot where a thumb reaches it (Tidy up / Scatter is in the bar). */}
+      {/* Inside a diary the page's own buttons replace the main bar: Back, and Tidy up / Scatter. */}
+      <ActionBar
+        withNavBar={false}
+        actions={[
+          { key: 'back', icon: 'chevron-back', label: 'Back', tint: palette.primary, onPress: () => router.back() },
+          ...(entries.length > 1
+            ? [{ key: 'tidy', icon: tidy ? ('shuffle' as const) : ('albums-outline' as const), label: tidy ? 'Scatter' : 'Tidy up', tint: palette.primary, active: tidy, onPress: toggle }]
+            : []),
+        ]}
+      />
     </View>
   );
 }
@@ -363,7 +385,6 @@ function MonthHeader({ month, count, top, progress, palette }: MonthHeaderProps)
 }
 
 const styles = StyleSheet.create({
-  header: { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between' },
   item: { position: 'absolute', left: 0, top: 0 },
   miniature: { position: 'absolute', left: 0, top: 0, transformOrigin: 'top left' },
   month: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center' },

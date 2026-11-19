@@ -10,6 +10,7 @@ import {
 import { entriesRepository } from './entriesRepository';
 import { listPhotoNames, readPhotoBytes, writePhotoBytes } from './photoStore';
 import { settingsRepository } from './settingsRepository';
+import { VOICE_DIR, listVoiceNames, writeVoiceBytes } from './voiceStore';
 import {
   LOCAL_ONLY_PREFIX,
   MANIFEST_NAME,
@@ -54,7 +55,7 @@ export interface BackupRepository {
 }
 
 const AUTO_SYNC_EVERY_MS = 20 * 60 * 60 * 1000;
-const MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp' };
+const MIME: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', heic: 'image/heic', webp: 'image/webp', m4a: 'audio/mp4', mp4: 'audio/mp4', '3gp': 'audio/3gpp', aac: 'audio/aac' };
 const mimeOf = (name: string) => MIME[name.split('.').pop()?.toLowerCase() ?? ''] ?? 'application/octet-stream';
 
 function createBackupRepository(): BackupRepository {
@@ -76,18 +77,21 @@ function createBackupRepository(): BackupRepository {
 
     const local = (await entriesRepository.getAll()).filter((e) => !e.id.startsWith(LOCAL_ONLY_PREFIX));
     const plan = mergeEntries(local, remote?.entries ?? [], await entriesRepository.listDeleted(), remote?.deleted ?? []);
-    const photos = planPhotos(plan.merged, listPhotoNames(), new Set(remoteByName.keys()));
+    const photos = planPhotos(plan.merged, new Set([...listPhotoNames(), ...listVoiceNames()]), new Set(remoteByName.keys()));
 
-    // Bring photos down before the entries that show them.
+    // Bring photos and voice notes down before the entries that show them.
     for (const path of photos.download) {
       const file = remoteByName.get(photoName(path));
-      if (file) writePhotoBytes(photoName(path), await drive.readBytes(file.id));
+      if (!file) continue;
+      const bytes = await drive.readBytes(file.id);
+      if (path.startsWith(`${VOICE_DIR}/`)) writeVoiceBytes(photoName(path), bytes);
+      else writePhotoBytes(photoName(path), bytes);
     }
     await entriesRepository.recordDeleted(plan.newLocalTombstones);
     for (const id of plan.removeLocal) await entriesRepository.remove(id, { remember: false });
     for (const entry of plan.writeLocal) await entriesRepository.insertRaw(entry);
 
-    // Send photos up before the manifest that refers to them, so a backup is never half-written.
+    // Send photos and voice notes up before the manifest that refers to them, so a backup is never half-written.
     for (const path of photos.upload) {
       await drive.write(folderId, photoName(path), await readPhotoBytes(path), mimeOf(path));
     }

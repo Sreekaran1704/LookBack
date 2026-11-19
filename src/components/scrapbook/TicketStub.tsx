@@ -2,6 +2,7 @@ import { memo, useState } from 'react';
 import { Text, View, type LayoutChangeEvent } from 'react-native';
 import Svg, { Line, Path } from 'react-native-svg';
 import { useTheme } from '../../theme';
+import { WritableText, type NoteEditor } from './WritableText';
 
 interface Props {
   width: number;
@@ -14,6 +15,8 @@ interface Props {
   stubLabel: string;
   serial: string;
   lift?: number;
+  /** Write on the ticket itself (the writing page). */
+  editor?: NoteEditor;
 }
 
 const STUB_RATIO = 0.22;
@@ -49,7 +52,7 @@ function ticketPath(w: number, h: number, notch: number, perfX: number): string 
 }
 
 /** Ticket stub for short quotes: perforated edge and punched notches. */
-export const TicketStub = memo(function TicketStub({ width, text, paper, accent, stubLabel, serial, lift = 1 }: Props) {
+export const TicketStub = memo(function TicketStub({ width, text, paper, accent, stubLabel, serial, lift = 1, editor }: Props) {
   const theme = useTheme();
   const { sizes, spacing, typography, colors } = theme;
   const [height, setHeight] = useState(0);
@@ -102,7 +105,7 @@ export const TicketStub = memo(function TicketStub({ width, text, paper, accent,
         <Text numberOfLines={1} style={[typography.small, { color: accent, letterSpacing: 1.2 }]}>
           {compact ? `Nº ${serial}` : `ADMIT ONE · Nº ${serial}`}
         </Text>
-        <Text style={[compact ? typography.label : typography.ticket, { color: colors.ink }]}>{text}</Text>
+        <WritableText text={text} editor={editor} style={[compact ? typography.label : typography.ticket, { color: colors.ink }]} />
       </View>
       {/* Tight paper shadow under the shape. */}
       <View

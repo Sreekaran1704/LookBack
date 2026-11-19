@@ -41,3 +41,16 @@ export function shapeShadow(theme: Theme, color: string, glowing = theme.dark): 
 }
 
 export const deg = (value: number) => `${value}deg`;
+
+/**
+ * An old instant photo: a touch of sepia, faded colors and softer contrast, a little brighter, so every
+ * print looks like it has been in a shoebox for years. Android draws it as a filter on the print; the
+ * warm cast, faded wash and vignette laid over it do the rest everywhere. Skipped in crowds (cost).
+ */
+export function vintageFilm(theme: Theme): ViewStyle {
+  if (theme.lite) return {};
+  return Platform.select<ViewStyle>({
+    android: { filter: [{ sepia: 0.3 }, { saturate: 0.78 }, { contrast: 0.88 }, { brightness: 1.06 }] },
+    default: {},
+  });
+}

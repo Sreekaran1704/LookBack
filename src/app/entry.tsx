@@ -10,41 +10,45 @@ import {
   ScrollView,
   StyleSheet,
   Text,
-  TextInput,
   View,
   useWindowDimensions,
 } from 'react-native';
-import Animated, { FadeInDown, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Svg, { Line } from 'react-native-svg';
-import { CircleButton, PillButton } from '../components/Buttons';
+import { sheetIn, sheetOut } from '../components/transitions';
+import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { PillButton } from '../components/Buttons';
+import { ConfirmSheet } from '../components/ConfirmSheet';
 import { SlidingToggle } from '../components/Pickers';
 import { PressableScale } from '../components/PressableScale';
-import { ScreenTitle, TopBar } from '../components/Screen';
+import { ActionBar, PageHeader, usePageContentStyle, type BarAction } from '../components/Screen';
 import { useStatusPill } from '../components/StatusPill';
 import { Buddy } from '../components/scrapbook/Buddy';
 import { Confetti } from '../components/scrapbook/Confetti';
 import { PaperBackground } from '../components/scrapbook/PaperBackground';
 import { ScrapObject } from '../components/scrapbook/ScrapObject';
+import { ShredAway } from '../components/scrapbook/ShredAway';
+import { VoiceStrip, useVoiceRecording, type VoiceDraft } from '../components/VoiceRecorder';
 import { Sticker } from '../components/scrapbook/Sticker';
 import { WashiTape } from '../components/scrapbook/WashiTape';
-import { entriesRepository, newEntryId, resolvePhotoUri, type Entry, type PhotoChange } from '../data';
+import { entriesRepository, newEntryId, resolvePhotoUri, resolveVoiceUri, type Entry, type PhotoChange, type VoiceChange } from '../data';
+import { useVoicePlayback } from '../hooks/useVoicePlayback';
 import { useToday } from '../hooks/useData';
 import { formatDisplayDate, formatMonthDay, parseLocalDate, resurfaceDate } from '../lib/dates';
 import { successHaptic } from '../lib/haptics';
-import { lookForEntry, STICKERS, TAPE_PATTERNS, type StickerKind, type TapePattern } from '../lib/seeded';
+import { lookForEntry, STICKERS, TAPE_PATTERNS, TICKET_MAX_CHARS, type ObjectType, type StickerKind, type TapePattern } from '../lib/seeded';
 import { STYLE_PALETTES, paletteByName, useTheme, type YearPalette } from '../theme';
 
 const PICKER_OPTIONS: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], quality: 0.8 };
-/** Ruled lines under a photo, for a short caption. */
-const CAPTION_LINES = 3;
 const CELEBRATE_RATIO = 0.62;
-const PREVIEW_RATIO = 0.6;
+/** The memory is what you write on, so it is drawn big. */
+const PREVIEW_RATIO = 0.8;
+/** The sticker / tape sheet takes at most this share of the screen's height. */
+const SHEET_MAX = 0.42;
 /** null = let the seed decide ("Surprise me"). */
 type Choice<T> = T | null;
 
 type Mode = 'note' | 'photo';
-type Part = 'sticker' | 'tape';
+/** What the sheet above the buttons shows: the photo choices, or the sticker / tape options. */
+type Part = 'photo' | 'sticker' | 'tape';
 
 const MODES = [
   { value: 'note', label: 'Just words', icon: 'create-outline' },
@@ -63,8 +67,8 @@ const PARTS = [
 export default function EntryScreen() {
   const theme = useTheme();
   const { colors, spacing, radii, sizes, typography } = theme;
-  const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const pageContent = usePageContentStyle({ withNavBar: false, gap: false, thumbBar: true });
+  const { width, height: winH } = useWindowDimensions();
   const today = useToday();
   const statusPill = useStatusPill();
   const reduceMotion = useReducedMotion();
@@ -92,6 +96,16 @@ export default function EntryScreen() {
   const [existingEntry, setExistingEntry] = useState<Entry | null>(null);
   const [saving, setSaving] = useState(false);
   const [celebrating, setCelebrating] = useState<Entry | null>(null);
+  const [askDelete, setAskDelete] = useState(false);
+  /** Taking the voice note off asks first (only the voice goes; the words and photo stay). */
+  const [askRemoveVoice, setAskRemoveVoice] = useState(false);
+  const [shredding, setShredding] = useState<Entry | null>(null);
+  const [voice, setVoice] = useState<VoiceChange>({ kind: 'keep' });
+  const [voiceDraft, setVoiceDraft] = useState<VoiceDraft | null>(null);
+  /** A photo with a voice note: the words are written on the polaroid's back, so it can be turned over. */
+  const [onBack, setOnBack] = useState(false);
+  const voicePlayer = useVoicePlayback(voiceDraft?.uri ?? null);
+  const rec = useVoiceRecording((draft) => changeVoice(draft));
 
   useEffect(() => {
     entriesRepository.getByDate(today).then((existing) => {
@@ -106,6 +120,7 @@ export default function EntryScreen() {
         setTapeColor(existing.tapeColor);
         setEntryId(existing.id);
         setExistingEntry(existing);
+        if (existing.voicePath) setVoiceDraft({ uri: resolveVoiceUri(existing.voicePath), wave: existing.voiceWave ?? [], ms: existing.voiceMs ?? 0 });
       }
       setLoaded(true);
     });
@@ -126,6 +141,8 @@ export default function EntryScreen() {
     setPhoto({ kind: 'set', sourceUri: asset.uri });
     setPreviewUri(asset.uri);
     setSetAside(null);
+    setMode('photo');
+    setPart(null);
     setDevelopKey((k) => k + 1);
   }
 
@@ -143,14 +160,21 @@ export default function EntryScreen() {
     }
   }
 
+  function changeVoice(draft: VoiceDraft | null) {
+    setVoiceDraft(draft);
+    if (draft) setVoice({ kind: 'set', sourceUri: draft.uri, wave: draft.wave, ms: draft.ms });
+    else setVoice(existingEntry?.voicePath ? { kind: 'remove' } : { kind: 'keep' });
+    if (!draft) setOnBack(false);
+  }
+
   function openPart(next: Part) {
-    setPart((p) => (p === next ? null : next));
+    setPart(next);
     // The options open right under the memory: put the memory at the top so both are in view while picking.
     Keyboard.dismiss();
     if (previewY > 0) setTimeout(() => scroll.current?.scrollTo({ y: previewY - spacing.md, animated: !reduceMotion }), 60);
   }
 
-  const canSave = loaded && !saving && (mode === 'photo' ? previewUri !== null : text.trim().length > 0);
+  const canSave = loaded && !saving && (mode === 'photo' ? previewUri !== null : text.trim().length > 0 || voiceDraft !== null);
 
   async function save() {
     if (!canSave) return;
@@ -160,8 +184,9 @@ export default function EntryScreen() {
         localDate: today,
         text,
         photo,
+        voice,
         id: entryId,
-        style: { sticker, tapePattern: tape, stickerColor, tapeColor },
+        style: { sticker, tapePattern: tape, stickerColor, tapeColor, objectType: mode === 'note' ? noteType : null },
       });
       successHaptic();
       const message = `Saved for ${formatDisplayDate(resurfaceDate(today))}`;
@@ -184,15 +209,12 @@ export default function EntryScreen() {
   const pageW = width - spacing.gutter * 2;
   const stickerPick = paletteByName(stickerColor) ?? palette;
   const tapePick = paletteByName(tapeColor) ?? palette;
-  const lineGap = sizes.ruledLineGap;
-  const lines = mode === 'photo' ? CAPTION_LINES : sizes.inputMinLines;
-  const inputHeight = lineGap * lines;
 
   // The memory as it will be saved. In photo mode without a photo yet, an empty polaroid to tap.
   const previewEntry: Entry = {
     id: entryId,
     localDate: today,
-    text: text.trim() || (mode === 'photo' ? '' : 'Your moment goes here…'),
+    text,
     photoPath: previewUri ? (existingEntry?.photoPath ?? 'preview') : null,
     createdAt: existingEntry?.createdAt ?? today,
     updatedAt: existingEntry?.updatedAt ?? today,
@@ -201,9 +223,58 @@ export default function EntryScreen() {
     sticker,
     stickerColor,
     tapeColor,
+    voicePath: voiceDraft ? (existingEntry?.voicePath ?? 'preview') : null,
+    voiceWave: voiceDraft?.wave ?? null,
+    voiceMs: voiceDraft?.ms ?? null,
   };
   const seeded = lookForEntry(previewEntry, theme.scrap.maxTilt, theme.scrap.maxOffset);
-  const previewLook = mode === 'photo' && !previewUri ? { ...seeded, objectType: 'polaroid' as const } : seeded;
+  // The words are typed on the memory, so its kind of paper must not change mid-sentence (that would rebuild the text
+  // box and drop the keyboard). A note's paper is picked once, from the seed, as if for a short note; it only turns
+  // from a ticket into a torn note when the words outgrow a ticket. The paper you saw is the one saved.
+  const shortType = lookForEntry({ ...previewEntry, text: 'a', objectType: null }, theme.scrap.maxTilt, theme.scrap.maxOffset).objectType;
+  const noteType: ObjectType =
+    existingEntry?.objectType === 'ticket' || existingEntry?.objectType === 'tornNote'
+      ? existingEntry.objectType === 'ticket' && text.length > TICKET_MAX_CHARS
+        ? 'tornNote'
+        : existingEntry.objectType
+      : shortType === 'ticket' && text.length <= TICKET_MAX_CHARS
+        ? 'ticket'
+        : 'tornNote';
+  const previewLook = mode === 'photo' ? (previewUri ? seeded : { ...seeded, objectType: 'polaroid' as const }) : { ...seeded, objectType: noteType };
+  const writing = mode === 'note' || previewUri !== null;
+
+  // The page's buttons, at the foot where a thumb reaches them (One UI style): each opens what it is about right above them.
+  const sheetAction = (key: Part, icon: BarAction['icon'], label: string): BarAction => ({
+    key,
+    icon,
+    label,
+    tint: palette.primary,
+    active: key === 'photo' ? part === 'photo' : part === 'sticker' || part === 'tape',
+    onPress: () => (part !== null && (key === 'photo') === (part === 'photo') ? setPart(null) : openPart(key)),
+  });
+  const actions: BarAction[] = [
+    { key: 'close', icon: 'close', label: 'Close', onPress: () => router.back() },
+    sheetAction('photo', 'camera-outline', 'Photo'),
+    sheetAction('sticker', 'color-palette-outline', 'Style'),
+    // Voice starts a recording (and stops it). Once there is a voice note, the strip above has Listen / Re-record / Remove.
+    ...(voiceDraft && !rec.recording
+      ? []
+      : [
+          {
+            key: 'voice',
+            icon: rec.recording ? ('stop' as const) : ('mic-outline' as const),
+            label: rec.recording ? 'Stop' : 'Voice',
+            tint: palette.primary,
+            active: rec.recording,
+            accessibilityLabel: rec.recording ? 'Stop recording' : 'Record a voice note',
+            onPress: () => {
+              setPart(null);
+              void (rec.recording ? rec.stop() : rec.start());
+            },
+          },
+        ]),
+    { key: 'save', icon: 'checkmark', label: isEdit ? 'Update' : 'Save', primary: colors.green, disabled: !canSave || rec.recording, onPress: save },
+  ];
 
   return (
     <View style={{ flex: 1 }}>
@@ -214,18 +285,20 @@ export default function EntryScreen() {
           ref={scroll}
           keyboardShouldPersistTaps="handled"
           keyboardDismissMode="on-drag"
-          contentContainerStyle={{
-            paddingTop: Platform.OS === 'ios' ? spacing.xl : insets.top + spacing.md,
-            paddingBottom: insets.bottom + spacing.xxxl * 2,
-            paddingHorizontal: spacing.gutter,
-            gap: spacing.xl,
-          }}
+          contentContainerStyle={[
+            pageContent,
+            // iOS shows this page as a sheet, below the status bar already. The parts of a page belong together, so a closer gap.
+            { gap: spacing.xl },
+            Platform.OS === 'ios' ? { paddingTop: spacing.xl } : null,
+          ]}
         >
-          <TopBar
-            left={<CircleButton icon="close" accessibilityLabel="Close" onPress={() => router.back()} />}
-            right={<PillButton label={isEdit ? 'Update' : 'Stick it in'} icon="checkmark" tone="green" onPress={save} disabled={!canSave} />}
+          {/* No peeking bunny: the bunny under the note keeps this page company. */}
+          <PageHeader
+            title="Today"
+            count={formatMonthDay(today)}
+            accent={palette.secondary}
+            buddy={false}
           />
-          <ScreenTitle title="Today" count={formatMonthDay(today)} accent={palette.secondary} />
 
           <SlidingToggle<Mode> options={MODES} value={mode} onChange={changeMode} accent={palette.primary} />
 
@@ -238,9 +311,24 @@ export default function EntryScreen() {
               photoUri={previewUri}
               develop={developKey > 0}
               width={pageW * PREVIEW_RATIO}
-              numberOfLines={6}
               raster={false}
-              onPress={mode === 'photo' && !previewUri ? () => pick('library') : undefined}
+              flipped={onBack}
+              voicePlayer={voicePlayer}
+              editor={
+                loaded && writing
+                  ? {
+                      value: text,
+                      onChangeText: setText,
+                      placeholder: 'A note, a quote, anything small…',
+                      // A new note opens ready to write; once you have typed, a new paper (ticket → torn note) keeps the keyboard.
+                      autoFocus: (!isEdit && mode === 'note' && !voiceDraft) || text.length > 0,
+                      onFocus: () => setPart(null),
+                      accessibilityLabel: mode === 'photo' ? 'Words on the polaroid' : "Today's note",
+                    }
+                  : undefined
+              }
+              // No photo yet: pick one. A photo with a voice note: turn it over to write on the back.
+              onPress={mode === 'photo' && !previewUri ? () => pick('library') : previewUri && voiceDraft ? () => setOnBack((b) => !b) : undefined}
               onPressTape={() => openPart('tape')}
               onPressSticker={() => openPart('sticker')}
             />
@@ -249,116 +337,129 @@ export default function EntryScreen() {
               <Buddy mood={previewUri ? 'cheer' : text.trim() ? 'happy' : 'wave'} accent={palette.primary} size={sizes.buddySmall * 0.8} bump={`${text.length}-${developKey}`} />
               <Text style={[typography.small, { color: colors.onDeskMuted, flex: 1 }]}>
                 {canSave
-                  ? `Lovely. I'll bring this back on ${formatDisplayDate(resurfaceDate(today))}. Tap the tape or sticker to change them.`
-                  : mode === 'photo'
-                    ? 'Tap the polaroid to pick a photo, then write a note to stick on it.'
-                    : 'Write below and watch it appear. Tap the tape or sticker to change them.'}
+                  ? `Lovely. I'll bring this back on ${formatDisplayDate(resurfaceDate(today))}. Decorate it from the buttons below.`
+                  : voiceDraft && mode === 'note'
+                    ? 'Your voice is the picture. Write a few words on the strip if you like.'
+                    : mode === 'photo'
+                    ? previewUri
+                      ? 'Write on the strip under the photo. Longer words go on the back: P.T.O!'
+                      : 'Tap the polaroid (or Photo below) to pick a photo, then write on it.'
+                    : 'Write right on the paper. Decorate it from the buttons below.'}
               </Text>
             </View>
           </View>
-
-          {mode === 'photo' ? (
-            <View style={[styles.row, { gap: spacing.md, flexWrap: 'wrap', justifyContent: 'center' }]}>
-              <PillButton label={previewUri ? 'Another photo' : 'Library'} icon="images-outline" onPress={() => pick('library')} />
-              <PillButton label="Camera" icon="camera-outline" onPress={() => pick('camera')} />
-            </View>
-          ) : null}
-
-          {/* Note card with ruled lines, right under the memory so both are in view while writing.
-              With a photo, what's written here is the note stuck to the photo. */}
-          <View
-            style={{
-              backgroundColor: colors.paperWhite,
-              borderRadius: radii.paper,
-              paddingHorizontal: spacing.lg,
-              paddingTop: spacing.sm,
-              boxShadow: theme.shadow(palette.primary, 1),
-              transform: [{ rotate: '-0.8deg' }],
-            }}
-          >
-            <Svg pointerEvents="none" width={pageW} height={inputHeight + spacing.sm} style={StyleSheet.absoluteFill}>
-              {Array.from({ length: lines }, (_, i) => {
-                const y = spacing.sm + lineGap * (i + 1) - spacing.xs;
-                return <Line key={i} x1={0} x2={pageW} y1={y} y2={y} stroke={colors.ruleLine} strokeWidth={1} />;
-              })}
-              <Line x1={spacing.xxl} x2={spacing.xxl} y1={0} y2={inputHeight + spacing.sm} stroke={colors.marginLine} strokeWidth={1} />
-            </Svg>
-            {loaded ? (
-              <TextInput
-                value={text}
-                onChangeText={setText}
-                placeholder={mode === 'photo' ? 'A little note to stick on the photo…' : 'A note, a quote, anything small…'}
-                placeholderTextColor={colors.inkMuted}
-                multiline
-                autoFocus={!isEdit && mode === 'note'}
-                textAlignVertical="top"
-                onFocus={() => {
-                  setPart(null);
-                  // Keep the memory in view above the keyboard while writing.
-                  if (previewY > 0) setTimeout(() => scroll.current?.scrollTo({ y: previewY, animated: !reduceMotion }), 250);
-                }}
-                style={[typography.body, { color: colors.ink, lineHeight: lineGap, minHeight: inputHeight, paddingLeft: spacing.xl, paddingTop: spacing.xs }]}
-                accessibilityLabel={mode === 'photo' ? 'Note on the photo' : "Today's note"}
-              />
-            ) : (
-              <View style={{ height: inputHeight }} />
-            )}
-          </View>
-
-          {/* Every option for the tapped part, with its colors. */}
-          <View style={{ gap: spacing.md }}>
-            <SlidingToggle<Part | 'none'>
-              options={PARTS}
-              value={part ?? 'none'}
-              onChange={(p) => openPart(p as Part)}
-              accent={palette.secondary}
-            />
-            {part ? (
-              <Animated.View
-                key={part}
-                entering={reduceMotion ? undefined : FadeInDown.springify().damping(18)}
-                style={{ backgroundColor: colors.panel, borderRadius: radii.panel, padding: spacing.lg, gap: spacing.lg, boxShadow: theme.shadow(undefined, 1) }}
-              >
-                {part === 'sticker' ? (
-                  <>
-                    <View style={[styles.grid, { gap: spacing.sm }]}>
-                      <Chip selected={sticker === null} onPress={() => setSticker(null)} label="Surprise me">
-                        <Ionicons name="sparkles" size={sizes.icon} color={palette.primary} />
-                      </Chip>
-                      <Chip selected={sticker === 'none'} onPress={() => setSticker('none')} label="No sticker">
-                        <Ionicons name="close" size={sizes.icon} color={colors.inkMuted} />
-                      </Chip>
-                      {STICKERS.map((kind) => (
-                        <Chip key={kind} selected={sticker === kind} onPress={() => setSticker(kind)} label={`${kind} sticker`}>
-                          <Sticker kind={kind} size={sizes.stickerTray * 0.75} color={stickerPick.primary} color2={stickerPick.secondary} />
-                        </Chip>
-                      ))}
-                    </View>
-                    <ColorRow label="Sticker color" value={stickerColor} onChange={setStickerColor} year={palette} />
-                  </>
-                ) : (
-                  <>
-                    <View style={[styles.grid, { gap: spacing.sm }]}>
-                      <Chip selected={tape === null} onPress={() => setTape(null)} label="Surprise me">
-                        <Ionicons name="sparkles" size={sizes.icon} color={palette.primary} />
-                      </Chip>
-                      {TAPE_PATTERNS.map((pattern) => (
-                        <Chip key={pattern} selected={tape === pattern} onPress={() => setTape(pattern)} label={`${pattern} tape`}>
-                          <WashiTape width={sizes.swatch} color={tapePick.primary} color2={tapePick.secondary} pattern={pattern} angle={-8} />
-                        </Chip>
-                      ))}
-                    </View>
-                    <ColorRow label="Tape color" value={tapeColor} onChange={setTapeColor} year={palette} />
-                  </>
-                )}
-              </Animated.View>
-            ) : null}
-          </View>
-
         </ScrollView>
+        {/* Sticker and tape: every option for the part, with its colors, in a sheet just above the buttons, in view without scrolling. */}
+        {part ? (
+          <Animated.View
+            entering={sheetIn(reduceMotion)}
+            exiting={sheetOut(reduceMotion)}
+            style={{ marginHorizontal: spacing.gutter, marginBottom: spacing.sm, maxHeight: winH * SHEET_MAX, backgroundColor: colors.panel, borderRadius: radii.panel, padding: spacing.md, gap: spacing.md, boxShadow: theme.shadow(undefined, 1) }}
+          >
+            {part === 'photo' ? (
+              <View style={{ gap: spacing.md }}>
+                <Text style={[typography.label, { color: colors.ink }]}>{previewUri ? 'Another photo?' : 'Add a photo'} </Text>
+                <View style={[styles.row, { gap: spacing.md }]}>
+                  <PillButton label="Library" icon="images-outline" grow onPress={() => pick('library')} />
+                  <PillButton label="Camera" icon="camera-outline" grow onPress={() => pick('camera')} />
+                </View>
+                {/* With a voice note the waveform has the strip, so the words live on the back. */}
+                {previewUri && voiceDraft ? (
+                  <PillButton label={onBack ? 'Back to the photo' : 'Write on the back'} icon="sync-outline" color={palette.primary} onPress={() => setOnBack((b) => !b)} />
+                ) : null}
+              </View>
+            ) : (
+            <>
+            <View style={[styles.row, { alignItems: 'center', gap: spacing.sm }]}>
+              <View style={{ flex: 1 }}>
+                <SlidingToggle<'sticker' | 'tape'> options={PARTS} value={part} onChange={(p) => setPart(p)} accent={palette.secondary} />
+              </View>
+            </View>
+            <ScrollView key={part} contentContainerStyle={{ gap: spacing.lg, paddingBottom: spacing.xs }} showsVerticalScrollIndicator={false}>
+                  {part === 'sticker' ? (
+                    <>
+                      <View style={[styles.grid, { gap: spacing.sm }]}>
+                        <Chip selected={sticker === null} onPress={() => setSticker(null)} label="Surprise me">
+                          <Ionicons name="sparkles" size={sizes.icon} color={palette.primary} />
+                        </Chip>
+                        <Chip selected={sticker === 'none'} onPress={() => setSticker('none')} label="No sticker">
+                          <Ionicons name="close" size={sizes.icon} color={colors.inkMuted} />
+                        </Chip>
+                        {STICKERS.map((kind) => (
+                          <Chip key={kind} selected={sticker === kind} onPress={() => setSticker(kind)} label={`${kind} sticker`}>
+                            <Sticker kind={kind} size={sizes.stickerTray * 0.75} color={stickerPick.primary} color2={stickerPick.secondary} />
+                          </Chip>
+                        ))}
+                      </View>
+                      <ColorRow label="Sticker color" value={stickerColor} onChange={setStickerColor} year={palette} />
+                    </>
+                  ) : (
+                    <>
+                      <View style={[styles.grid, { gap: spacing.sm }]}>
+                        <Chip selected={tape === null} onPress={() => setTape(null)} label="Surprise me">
+                          <Ionicons name="sparkles" size={sizes.icon} color={palette.primary} />
+                        </Chip>
+                        {TAPE_PATTERNS.map((pattern) => (
+                          <Chip key={pattern} selected={tape === pattern} onPress={() => setTape(pattern)} label={`${pattern} tape`}>
+                            <WashiTape width={sizes.swatch} color={tapePick.primary} color2={tapePick.secondary} pattern={pattern} angle={-8} />
+                          </Chip>
+                        ))}
+                      </View>
+                      <ColorRow label="Tape color" value={tapeColor} onChange={setTapeColor} year={palette} />
+                    </>
+                  )}
+            </ScrollView>
+            </>
+            )}
+          </Animated.View>
+        ) : null}
+        {/* The page's buttons at the foot, where a thumb reaches them; they ride up with the keyboard. */}
+        <VoiceStrip rec={rec} value={rec.recording ? null : voiceDraft} player={voicePlayer} onRemove={() => setAskRemoveVoice(true)} accent={palette.primary} />
+        <ActionBar withNavBar={false} actions={actions} />
       </KeyboardAvoidingView>
 
       {celebrating ? <Celebration entry={celebrating} width={width * CELEBRATE_RATIO} colors={[palette.primary, palette.secondary, colors.amber, colors.paperWhite]} /> : null}
+      <ConfirmSheet
+        visible={askRemoveVoice}
+        title="Take your voice off?"
+        message={`Only the voice note goes; your words${previewUri ? ' and photo stay' : ' stay'}.${existingEntry?.voicePath ? " It's gone for good once you tap Update." : ''}`}
+        confirmLabel="Remove it"
+        confirmIcon="mic-off-outline"
+        onConfirm={() => {
+          setAskRemoveVoice(false);
+          if (voicePlayer?.playing) voicePlayer.toggle();
+          changeVoice(null);
+        }}
+        onCancel={() => setAskRemoveVoice(false)}
+      />
+      {existingEntry ? (
+        <ConfirmSheet
+          visible={askDelete}
+          title="Let this one go?"
+          message={`Bun will forget today's page${existingEntry.photoPath ? ', photo and all' : existingEntry.voicePath ? ', voice and all' : ''}. It leaves this phone now and your Drive backup at the next backup. There's no getting it back.`}
+          confirmLabel="Shred it"
+          confirmIcon="cut-outline"
+          onConfirm={() => {
+            setAskDelete(false);
+            setShredding(existingEntry);
+          }}
+          onCancel={() => setAskDelete(false)}
+        />
+      ) : null}
+      {shredding ? (
+        <ShredAway
+          entry={shredding}
+          onDone={() => {
+            entriesRepository
+              .remove(shredding.id)
+              .then(() => router.back())
+              .catch((error: unknown) => {
+                setShredding(null);
+                Alert.alert("Couldn't delete", error instanceof Error ? error.message : String(error));
+              });
+          }}
+        />
+      ) : null}
     </View>
   );
 }

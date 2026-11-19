@@ -16,6 +16,8 @@ export interface PlannableEntry {
   localDate: LocalDate;
   text: string;
   photoPath: string | null;
+  /** Optional so older callers and tests still fit. */
+  voicePath?: string | null;
 }
 
 export interface PlannedNotification {
@@ -49,7 +51,7 @@ export function describeMemories(
   if (!newest) throw new Error('describeMemories needs at least one entry');
   const year = parseLocalDate(newest.localDate).year;
   const lead = yearsAgoLabel(yearsBetween(newest.localDate, day));
-  const line = firstLine(newest.text) || (newest.photoPath ? 'a photo you saved 📷' : 'a moment you saved');
+  const line = firstLine(newest.text) || (newest.photoPath ? 'a photo you saved 📷' : newest.voicePath ? 'a voice note you saved 🎙' : 'a moment you saved');
   const more = matches.length - 1;
   const title = more > 0 ? `💌 ${matches.length} little letters from your past self` : `💌 A little letter from ${year}`;
   const body = more > 0 ? `${lead}: ${line} · and ${more} more 🐰` : `${lead}: ${line}`;
