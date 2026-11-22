@@ -1,30 +1,22 @@
 import { useState, type ReactNode } from 'react';
 import { StyleSheet, Text, View, useWindowDimensions, type LayoutChangeEvent, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { seededRng, STICKERS, TAPE_PATTERNS } from '../lib/seeded';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useTheme } from '../theme';
+import { mixHex, useTheme, withAlpha } from '../theme';
+import { Texture } from './scrapbook/Texture';
+import { PaperTabs, Stitches, WashIn } from './PaperTabs';
+import { Raster } from './scrapbook/Raster';
 import type { IconName } from './Buttons';
 import { PressableScale } from './PressableScale';
 import { useNavBarSpace } from './NavBar';
-import { BrickWall } from './scrapbook/BrickWall';
-import { Buddy, PEEK_SHARE, type BuddyMood } from './scrapbook/Buddy';
-import { Doodle } from './scrapbook/Doodle';
-import { Raster } from './scrapbook/Raster';
-import { deg } from './scrapbook/shared';
-import { Sticker } from './scrapbook/Sticker';
-import { WashiTape } from './scrapbook/WashiTape';
+import { Buddy, type BuddyMood } from './scrapbook/Buddy';
 
-const COUNT_CIRCLE_PAD = 14;
 const FLOWER = '✿';
-/** The header bunny's wall: its share of the header's height, how far the bunny sinks behind it, its width. */
-const WALL_SHARE = 0.3;
-const WALL_TUCK = 0.45;
-const WALL_WIDTH = 1.05;
-/** At most this share of the bunny's height goes behind the wall (just the paws). */
-const WALL_TUCK_OF_BUNNY = 0.15;
-/** A very tall header (a wrapped title) shouldn't grow a giant bunny. */
-const BUDDY_MAX_SCALE = 1;
+/** The emblem beside a page's title is at most this big. */
+const EMBLEM_MAX = 0.78;
+/** The tooled rule under a section heading: its little diamond. */
+const RULE_DIAMOND = 6;
+
 /**
  * Android draws text clipped just inside its padding, and Caveat's last letter leans past the box
  * ("da|y", "Toda|y" lost the top of the y). A trailing space gives the last glyph room inside the clip.
@@ -32,65 +24,23 @@ const BUDDY_MAX_SCALE = 1;
 export const HAND_TAIL = ' ';
 
 /**
- * Big handwritten title with a highlighter swipe behind it, and an optional count circled in pen:
- * "Memories (56)".
+ * A shared serif title with an optional compact count.
  */
-export function ScreenTitle({ title, count, accent }: { title: string; count?: number | string; accent?: string }) {
+export function ScreenTitle({ title, count }: { title: string; count?: number | string; accent?: string }) {
   const { colors, typography, spacing, sizes } = useTheme();
   const { width: windowW } = useWindowDimensions();
   // Title, count and the buttons share one line, so narrow phones get a smaller title rather than a wrapped one.
   const titleStyle = windowW < sizes.narrowWindow ? typography.titleNarrow : typography.title;
-  const [titleW, setTitleW] = useState(0);
-  const [countW, setCountW] = useState(0);
-  const highlight = accent ?? colors.amber;
-  const titleH = titleStyle.lineHeight ?? 0;
-  const countH = typography.hand.lineHeight ?? 0;
-
   return (
-    <View style={[styles.titleRow, { gap: spacing.sm }]} accessibilityRole="header">
-      <View>
-        {titleW > 0 ? (
-          <Doodle
-            kind="highlight"
-            width={titleW + spacing.md}
-            height={titleH}
-            color={highlight}
-            seed={title.length}
-            style={{ position: 'absolute', left: -spacing.sm / 2, top: spacing.xs }}
-          />
-        ) : null}
-        <Text
-          onLayout={(e: LayoutChangeEvent) => setTitleW(e.nativeEvent.layout.width)}
-          style={[titleStyle, { color: colors.onDesk }]}
-          numberOfLines={1}
-          textBreakStrategy="simple"
-        >
-          {title}
-          {HAND_TAIL}
-        </Text>
-      </View>
+    <View style={[styles.titleRow, { gap: spacing.md }]} accessibilityRole="header">
+      <Text style={[titleStyle, styles.emboss, { color: colors.giltBright }]} numberOfLines={1} textBreakStrategy="simple">
+        {title}
+        {HAND_TAIL}
+      </Text>
       {count !== undefined ? (
-        <View style={{ paddingHorizontal: COUNT_CIRCLE_PAD / 2 }}>
-          {countW > 0 ? (
-            <Doodle
-              kind="circle"
-              width={countW + COUNT_CIRCLE_PAD}
-              height={countH + COUNT_CIRCLE_PAD / 2}
-              color={highlight}
-              seed={String(count).length + 3}
-              style={{ position: 'absolute', left: 0, top: -COUNT_CIRCLE_PAD / 4 }}
-            />
-          ) : null}
-          <Text
-            onLayout={(e: LayoutChangeEvent) => setCountW(e.nativeEvent.layout.width)}
-            numberOfLines={1}
-            // Android's default break strategy drops the last word of a shrink-wrapped Caveat label ("November 10" → "November").
-            textBreakStrategy="simple"
-            // More room on the right: Android measures a Caveat line shorter than it draws, so the circle ran through the last digit.
-            style={[typography.hand, { color: colors.onDeskMuted, paddingLeft: COUNT_CIRCLE_PAD / 2, paddingRight: COUNT_CIRCLE_PAD * 1.25 }]}
-          >
+        <View style={{ borderWidth: 1, borderColor: colors.gilt, borderRadius: 3, paddingHorizontal: spacing.sm, paddingVertical: 2 }}>
+          <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.stamp, { color: colors.giltBright }]}>
             {count}
-            {HAND_TAIL}
           </Text>
         </View>
       ) : null}
@@ -98,36 +48,35 @@ export function ScreenTitle({ title, count, accent }: { title: string; count?: n
   );
 }
 
-/** Section heading with a wavy hand-drawn underline and an optional handwritten detail on the right. */
-export function SectionHeader({ title, detail, accent }: { title: string; detail?: string; accent?: string }) {
-  const { colors, typography, spacing } = useTheme();
-  const [w, setW] = useState(0);
+/** A quiet printed rule, shared by section headings. */
+export function GiltRule({ style }: { style?: StyleProp<ViewStyle> }) {
+  const { colors } = useTheme();
   return (
-    // Title and detail share one baseline; the wavy underline hangs below the title outside the row's flow,
-    // so it doesn't push the title up off the detail's line.
-    <View style={[styles.sectionRow, { marginBottom: spacing.lg + spacing.md, gap: spacing.sm }]}>
-      <View>
-        <Text
-          onLayout={(e) => setW(e.nativeEvent.layout.width)}
-          numberOfLines={1}
-          textBreakStrategy="simple"
-          style={[typography.heading, { color: colors.onDesk }]}
-        >
+    <View style={[styles.ruleRow, style]} pointerEvents="none">
+      <View style={{ width: RULE_DIAMOND, height: RULE_DIAMOND, backgroundColor: colors.gilt, transform: [{ rotate: '45deg' }] }} />
+      <View style={{ flex: 1, height: StyleSheet.hairlineWidth * 2, backgroundColor: colors.gilt, opacity: 0.7 }} />
+    </View>
+  );
+}
+
+/** Serif section heading and a small supporting detail over a printed rule. */
+export function SectionHeader({ title, detail }: { title: string; detail?: string; accent?: string }) {
+  const { colors, typography, spacing } = useTheme();
+  return (
+    <View style={{ marginBottom: spacing.lg, gap: spacing.xs }}>
+      <View style={[styles.sectionRow, { gap: spacing.sm }]}>
+        <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.heading, styles.emboss, { color: colors.onDesk }]}>
           {title}
           {HAND_TAIL}
         </Text>
-        {w > 0 ? (
-          <View style={{ position: 'absolute', left: 0, top: '100%' }}>
-            <Doodle kind="underline" width={w} height={spacing.md} color={accent ?? colors.amber} seed={title.length} />
-          </View>
+        {detail ? (
+          // flex: 1 + right-aligned, so Android never under-measures a shrink-wrapped label.
+          <Text numberOfLines={1} style={[typography.caption, { color: colors.onDeskMuted, flex: 1, textAlign: 'right' }]}>
+            {detail}
+          </Text>
         ) : null}
       </View>
-      {detail ? (
-        // flex: 1 + right-aligned: a shrink-wrapped Caveat label gets under-measured on Android.
-        <Text numberOfLines={1} style={[typography.hand, { color: colors.onDeskMuted, flex: 1, textAlign: 'right' }]}>
-          {detail}
-        </Text>
-      ) : null}
+      <GiltRule />
     </View>
   );
 }
@@ -145,7 +94,7 @@ export function usePageContentStyle({ withNavBar = true, gap = true, thumbBar = 
     paddingTop: insets.top + spacing.lg,
     // With an action bar under the page, the bar (and the room for the nav bar) is below the scroll view.
     paddingBottom: thumbBar ? spacing.xl : withNavBar ? navSpace : insets.bottom + spacing.xxxl * 2,
-    paddingHorizontal: spacing.gutter,
+    paddingHorizontal: spacing.gutter + spacing.xs,
     ...(gap ? { gap: spacing.xxl } : null),
   };
 }
@@ -153,16 +102,16 @@ export function usePageContentStyle({ withNavBar = true, gap = true, thumbBar = 
 interface PageHeaderProps {
   title: string;
   count?: number | string;
-  /** A handwritten line under the title ("hi, Sree ✿"). */
+  /** A printed line under the title ("hi, Sree"). */
   subtitle?: string;
-  /** Highlighter colour behind the title (the year's partner colour). */
+  /** Kept for callers; the diary's chrome is gilt on every page. */
   accent: string;
-  /** The peeking bunny's bow colour; leave the bunny out with `buddy={false}` (a page with its own bunny nearby). */
   buddyAccent?: string;
+  /** The emblem beside the title; leave it out with `buddy={false}` (a page with its own emblem nearby). */
   buddy?: boolean;
   buddyMood?: BuddyMood;
   bump?: number | string;
-  /** The bunny peeks over a little brick wall instead of the page's edge (Home). */
+  /** Kept for callers (the bunny used to peek over a wall here). */
   wall?: boolean;
   /** Buttons above the title (back, close, actions), in a `TopBar` row. */
   left?: ReactNode;
@@ -170,49 +119,28 @@ interface PageHeaderProps {
 }
 
 /**
- * The top of every page, built the same way everywhere: an optional row of buttons, then the big
- * highlighted title (with its count circled), a handwritten line under it, and the bunny peeking over
- * from the right, bottom-aligned with the title block.
+ * The top of every page, built the same way everywhere: an optional row of buttons, then the gilt title (with
+ * its count), one printed line under it, and the diary's emblem on the right, as tall as the title block.
  */
-export function PageHeader({ title, count, subtitle, accent, buddyAccent, buddy = true, buddyMood = 'peek', bump, wall = false, left, right }: PageHeaderProps) {
-  const { colors, typography, spacing, sizes, nav } = useTheme();
-  const flower = subtitle?.endsWith(FLOWER) ?? false;
-  // The bunny is exactly as tall as the title + subtitle beside it, so the two read as one block.
+export function PageHeader({ title, count, subtitle, buddy = true, buddyMood = 'happy', bump, left, right }: PageHeaderProps) {
+  const { colors, typography, spacing, sizes } = useTheme();
   const [textH, setTextH] = useState(0);
   const onTextLayout = (e: LayoutChangeEvent) => {
     const h = Math.round(e.nativeEvent.layout.height);
     if (Math.abs(h - textH) > 1) setTextH(h);
   };
-  const peekShare = buddyMood === 'peek' ? PEEK_SHARE : 1;
-  // Behind a wall the bunny's cut-off bottom (and its bob) hides behind the bricks; its paws rest on the top.
-  const baseWall = wall ? Math.round(textH * WALL_SHARE) : 0;
-  const tuck = Math.round(baseWall * WALL_TUCK);
-  const buddySize = textH > 0 ? Math.min((textH - baseWall + tuck) / peekShare, sizes.buddy * BUDDY_MAX_SCALE) : 0;
-  // Only its paws go behind the bricks, however tall the wall; a tall header (a wrapped subtitle) gets a
-  // taller wall rather than a giant bunny.
-  const sink = wall ? Math.min(tuck, Math.round(buddySize * peekShare * WALL_TUCK_OF_BUNNY)) : 0;
-  const wallH = wall ? Math.round(textH - buddySize * peekShare + sink) : 0;
+  const emblem = textH > 0 ? Math.min(textH, sizes.buddy * EMBLEM_MAX) : 0;
+  const line = subtitle?.endsWith(FLOWER) ? subtitle.slice(0, -FLOWER.length).trimEnd() : subtitle;
   return (
     <View>
       {left || right ? <TopBar left={left} right={right} /> : null}
       <View style={[styles.headerRow, { gap: spacing.md }]}>
         <View style={{ flex: 1 }} onLayout={onTextLayout}>
-          <ScreenTitle title={title} count={count} accent={accent} />
-          {/* Full width: a shrink-wrapped Caveat label gets under-measured on Android. */}
-          {subtitle ? (
-            <Text style={[typography.hand, { color: colors.onDeskMuted, marginTop: spacing.xs }]}>
-              {flower ? subtitle.slice(0, -FLOWER.length) : subtitle}
-              {/* The little flower is in the paper's partner accent, so it goes with whichever paper is chosen. */}
-              {flower ? <Text style={{ color: nav.tape2 }}>{FLOWER}</Text> : null}
-            </Text>
-          ) : null}
+          <ScreenTitle title={title} count={count} />
+          {/* Full width, so Android never under-measures a shrink-wrapped label. */}
+          {line ? <Text style={[typography.caption, { color: colors.onDeskMuted, marginTop: spacing.xs, fontSize: (typography.caption.fontSize ?? 17) + 1 }]}>{line}</Text> : null}
         </View>
-        {buddy && buddySize > 0 ? (
-          <View style={{ alignItems: 'center' }}>
-            <Buddy mood={buddyMood} accent={buddyAccent ?? accent} size={buddySize} bump={bump} tappable style={wall ? { marginBottom: -sink } : undefined} />
-            {wall ? <BrickWall width={Math.round(buddySize * WALL_WIDTH)} height={wallH} /> : null}
-          </View>
-        ) : null}
+        {buddy && emblem > 0 ? <Buddy mood={buddyMood === 'peek' ? 'happy' : buddyMood} size={emblem} bump={bump} tappable /> : null}
       </View>
     </View>
   );
@@ -246,59 +174,37 @@ export function ActionBar({ actions, withNavBar = true }: { actions: readonly Ba
   const { spacing } = useTheme();
   const insets = useSafeAreaInsets();
   const navSpace = useNavBarSpace();
-  return (
-    <View style={{ paddingHorizontal: spacing.gutter, paddingTop: spacing.sm, paddingBottom: withNavBar ? navSpace - spacing.lg : insets.bottom + spacing.sm }}>
-      <ActionRow actions={actions} />
-    </View>
-  );
+  // The page's buttons are index tabs on its bottom edge, like the main pages' tabs.
+  return <PaperTabs items={actions} bottomInset={withNavBar ? navSpace - spacing.lg : insets.bottom} />;
 }
 
 /** Height of a place in an action row: a button and its label. */
 export function useActionRowHeight(): number {
-  const { sizes, spacing } = useTheme();
-  return sizes.circleButton + spacing.lg;
+  // The same height as the bar: an icon over a label, inside the stitching.
+  const { control } = useTheme();
+  return control.height + control.stitchInset * 2;
 }
 
-/** The action bar's paper: corner radius, how far in the stitch runs, and its solid paper shadow (like the main bar). */
-const ROW_CORNER = 22;
-const ROW_STITCH = 5;
-const ROW_DROP = 3;
-
 /**
- * The bar itself, made like the main bar at the foot of the bar pages: a strip of the chosen paper with a
- * dashed stitch just inside its edge, washi tape on both ends and a flat paper shadow, holding equal places
- * of icon + handwritten label. The main action is a sticker: a filled capsule with a white rim, set a
- * touch crooked. Anything in `lead` comes before the buttons (the voice strip's waveform while recording).
+ * A row of buttons on a stitched slip (the voice strip on the writing page, the tape deck), made like the bar and every
+ * other control: cream card paper, stitched, equal places of a small ink drawing and a printed label, the switched-on one
+ * and the main action on the highlighter wash. Anything in `lead` comes before the buttons (the waveform, the cassette).
  */
-export function ActionRow({ actions, lead, style, tapes = true }: { actions: readonly BarAction[]; lead?: ReactNode; style?: StyleProp<ViewStyle>; tapes?: boolean }) {
+export function ActionRow({ actions, lead, style }: { actions: readonly BarAction[]; lead?: ReactNode; style?: StyleProp<ViewStyle>; tapes?: boolean }) {
   const theme = useTheme();
-  const { spacing, sizes, typography } = theme;
-  const nav = theme.nav;
+  const { sizes, typography, colors, control } = theme;
   const slotH = useActionRowHeight();
-  const tapeW = sizes.tapeHeight * 2.4;
+  const ink = colors.ink;
+  const muted = withAlpha(colors.ink, 0.74);
   return (
     <View style={style}>
-      <View
-        style={{
-          flexDirection: 'row',
-          alignItems: 'center',
-          backgroundColor: nav.strip,
-          borderRadius: ROW_CORNER,
-          borderWidth: 1,
-          borderColor: nav.edge,
-          padding: spacing.xs + 2,
-          gap: spacing.xs,
-          boxShadow: `0px ${ROW_DROP}px 0px ${nav.shadow}`,
-        }}
-      >
-        {/* The stitch, just inside the paper's edge. */}
-        <View
-          pointerEvents="none"
-          style={{ position: 'absolute', top: ROW_STITCH, left: ROW_STITCH, right: ROW_STITCH, bottom: ROW_STITCH, borderRadius: ROW_CORNER - ROW_STITCH, borderWidth: 1.4, borderStyle: 'dashed', borderColor: nav.stitch }}
-        />
+      <View style={{ flexDirection: 'row', alignItems: 'center', backgroundColor: colors.panel, borderRadius: control.radius, padding: control.stitchInset, boxShadow: theme.shadow(undefined, 1) }}>
+        <Texture kind="paper" opacity={0.5} radius={control.radius} />
+        <Stitches />
         {lead}
         {actions.map((a) => {
-          const fg = a.primary ? nav.rim : (a.tint ?? (a.active ? nav.ink : nav.inkMuted));
+          const on = a.active || !!a.primary;
+          const fg = a.tint && !on ? a.tint : on ? ink : muted;
           return (
             <PressableScale
               key={a.key}
@@ -307,27 +213,13 @@ export function ActionRow({ actions, lead, style, tapes = true }: { actions: rea
               accessibilityRole="button"
               accessibilityLabel={a.accessibilityLabel ?? a.label}
               accessibilityState={{ disabled: a.disabled, selected: a.active }}
-              style={{ flex: a.primary ? 1.4 : 1 }}
+              style={{ flex: 1 }}
             >
-              <View
-                style={[
-                  {
-                    height: slotH - spacing.xs * 2,
-                    borderRadius: (slotH - spacing.xs * 2) / 2.4,
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    gap: 1,
-                  },
-                  a.primary
-                    ? { backgroundColor: a.primary, borderWidth: 2.5, borderColor: nav.rim, transform: [{ rotate: '-2deg' }], boxShadow: theme.shadow(a.primary, 0.6) }
-                    : a.active
-                      ? { backgroundColor: nav.active }
-                      : null,
-                ]}
-              >
-                <Ionicons name={a.icon} size={sizes.icon} color={fg} />
-                {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
-                <Text numberOfLines={1} style={[typography.small, { color: a.primary ? nav.rim : a.active || a.tint ? nav.ink : nav.inkMuted, alignSelf: 'stretch', textAlign: 'center', lineHeight: typography.small.fontSize ? typography.small.fontSize * 1.1 : undefined }]}>
+              <View style={{ height: slotH - control.stitchInset * 2, alignItems: 'center', justifyContent: 'center' }}>
+                {on ? <WashIn color={a.primary ?? colors.gilt} /> : null}
+                <Ionicons name={on ? (a.icon.replace('-outline', '') as IconName) : a.icon} size={sizes.icon - 2} color={fg} />
+                {/* Full width + centred, so Android never under-measures a shrink-wrapped label. */}
+                <Text numberOfLines={1} style={[typography.small, { fontSize: 13, lineHeight: 16, marginTop: 3, color: on ? ink : muted, fontWeight: on ? '700' : '600', alignSelf: 'stretch', textAlign: 'center', paddingRight: 0 }]}>
                   {a.label}
                 </Text>
               </View>
@@ -335,12 +227,6 @@ export function ActionRow({ actions, lead, style, tapes = true }: { actions: rea
           );
         })}
       </View>
-      {tapes ? (
-        <>
-          <WashiTape width={tapeW} color={nav.tape} color2={nav.rim} pattern="stripes" angle={-24} style={{ position: 'absolute', left: -spacing.md, top: -spacing.sm }} />
-          <WashiTape width={tapeW} color={nav.tape2} color2={nav.rim} pattern="dots" angle={22} style={{ position: 'absolute', right: -spacing.md, top: -spacing.sm }} />
-        </>
-      ) : null}
     </View>
   );
 }
@@ -356,20 +242,23 @@ export function TopBar({ left, right }: { left?: ReactNode; right?: ReactNode })
   );
 }
 
-/** Handwritten page number at the foot of a screen: every screen is a page of the same journal. */
+/** A printed page number at the foot of a screen, between two short gilt rules: every screen is a page of the same diary. */
 export function PageFooter({ label }: { label: string }) {
   const { colors, typography, spacing } = useTheme();
   return (
-    // Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android.
-    <Text style={[typography.handSmall, { color: colors.onDeskFaint, textAlign: 'center', marginTop: spacing.xl }]}>~ {label} ~</Text>
+    <View style={[styles.footer, { marginTop: spacing.xl, gap: spacing.md }]}>
+      <View style={{ width: spacing.xl, height: StyleSheet.hairlineWidth * 2, backgroundColor: colors.gilt, opacity: 0.6 }} />
+      {/* flex: 1 + centred: Android drops the last words of a shrink-wrapped label ("the" instead of "the last page"). */}
+      <Text numberOfLines={1} style={[typography.handSmall, { color: colors.onDeskFaint, textAlign: 'center', flex: 1 }]}>{label}</Text>
+      <View style={{ width: spacing.xl, height: StyleSheet.hairlineWidth * 2, backgroundColor: colors.gilt, opacity: 0.6 }} />
+    </View>
   );
 }
 
 interface PanelProps {
   children: ReactNode;
-  /** Seeds the tilt, tape and sticker so each card looks different but stays put. */
+  /** Kept for callers (cards used to be taped and stickered by seed and accent). */
   seed?: string;
-  /** Tape + sticker color (usually a year color). */
   accent?: string;
   accent2?: string;
   paper?: string;
@@ -377,69 +266,33 @@ interface PanelProps {
   style?: StyleProp<ViewStyle>;
 }
 
-/** A paper card stuck to the page: slightly crooked, held by a strip of washi tape, with a sticker in a corner. */
-export function Panel({ children, seed = 'panel', accent, accent2, paper, sticker = true, style }: PanelProps) {
+/** A stack of diary pages, with a red margin, fibres and a soft paper edge. */
+export function Panel({ children, paper, style }: PanelProps) {
   const theme = useTheme();
-  const { colors, radii, spacing, sizes } = theme;
-  const [w, setW] = useState(0);
-  const rng = seededRng(`panel-${seed}`);
-  const tilt = rng.range(-1.2, 1.2);
-  const tapeAngle = rng.range(-7, 7);
-  const tapeAt = rng.range(0.2, 0.55);
-  const pattern = rng.pick(TAPE_PATTERNS);
-  const stickerKind = rng.pick(STICKERS);
-  const stickerTilt = rng.range(-18, 18);
-  const tapeColor = accent ?? colors.amber;
-  const tapeW = Math.max(w * 0.28, sizes.tapeHeight * 3);
-
+  const { colors, spacing } = theme;
+  const shape = { borderTopLeftRadius: 2, borderBottomLeftRadius: 2, borderTopRightRadius: 7, borderBottomRightRadius: 7 };
   return (
-    // Kept as a texture: the card's blurred shadow, tape and sticker are painted once, not on every frame
-    // (Settings took 16 ms of GPU a frame while its bunny bobbed). It re-renders when the card's content changes.
     <Raster>
-    <View
-      onLayout={(e) => setW(e.nativeEvent.layout.width)}
-      style={[
-        {
-          backgroundColor: paper ?? colors.panel,
-          borderRadius: radii.panel,
-          paddingHorizontal: spacing.gutter,
-          paddingTop: spacing.lg,
-          paddingBottom: spacing.md,
-          boxShadow: theme.shadow(undefined, 1),
-          transform: [{ rotate: deg(tilt) }],
-        },
-        style,
-      ]}
-    >
-      {children}
-      {w > 0 ? (
-        <WashiTape
-          width={tapeW}
-          color={tapeColor}
-          color2={accent2 ?? colors.paperWhite}
-          pattern={pattern}
-          angle={tapeAngle}
-          style={{ position: 'absolute', top: -sizes.tapeHeight / 2, left: (w - tapeW) * tapeAt }}
-        />
-      ) : null}
-      {sticker ? (
-        <Sticker
-          kind={stickerKind}
-          size={sizes.stickerDecor}
-          color={accent2 ?? tapeColor}
-          color2={tapeColor}
-          style={{ position: 'absolute', right: -sizes.stickerDecor * 0.3, bottom: -sizes.stickerDecor * 0.3, transform: [{ rotate: deg(stickerTilt) }] }}
-        />
-      ) : null}
-    </View>
+      <View>
+        <View style={[StyleSheet.absoluteFill, shape, { backgroundColor: mixHex(colors.paper, '#000000', 0.14), transform: [{ translateX: 3 }, { translateY: 3 }], opacity: 0.75 }]} />
+        <View style={[shape, { backgroundColor: paper ?? colors.panel, paddingLeft: spacing.gutter + spacing.sm, paddingRight: spacing.gutter, paddingTop: spacing.lg, paddingBottom: spacing.md, boxShadow: theme.shadow(undefined, 1) }, style]}>
+          <Texture kind="paper" radius={7} opacity={0.35} />
+          <View pointerEvents="none" style={{ position: 'absolute', left: 14, top: 0, bottom: 0, width: 1, backgroundColor: colors.marginLine }} />
+          {children}
+        </View>
+      </View>
     </Raster>
   );
 }
 
 const styles = StyleSheet.create({
   titleRow: { flexDirection: 'row', alignItems: 'center' },
+  /** Lettering pressed into the leather: a dark edge under it and a faint lit edge. */
+  emboss: { textShadowColor: 'rgba(0, 0, 0, 0.55)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 },
+  ruleRow: { flexDirection: 'row', alignItems: 'center' },
+  footer: { flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
   sectionRow: { flexDirection: 'row', alignItems: 'baseline', justifyContent: 'space-between' },
   topBar: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center' },
-  headerRow: { flexDirection: 'row', alignItems: 'flex-end' },
+  headerRow: { flexDirection: 'row', alignItems: 'center' },
   cluster: { flexDirection: 'row', alignItems: 'center' },
 });

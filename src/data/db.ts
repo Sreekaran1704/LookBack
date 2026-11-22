@@ -46,6 +46,44 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE entries ADD COLUMN voice_wave TEXT;
   ALTER TABLE entries ADD COLUMN voice_ms INTEGER;
   `,
+  // v6: a reply to your past self, written when the memory came back a year (or more) later, and when it was written.
+  `
+  ALTER TABLE entries ADD COLUMN reply TEXT;
+  ALTER TABLE entries ADD COLUMN replied_at TEXT;
+  `,
+  // v7: the words the person writes on their cassette.
+  `ALTER TABLE entries ADD COLUMN voice_title TEXT;`,
+  // v8: giving memories phone to phone (Blip style). Everything stays on the phone: the people you've added (their
+  // account id and name), the memories people gave you (files in received/<id>/), and the gifts still waiting to go.
+  `
+  CREATE TABLE IF NOT EXISTS people (
+    id TEXT PRIMARY KEY NOT NULL,
+    name TEXT NOT NULL,
+    added_at TEXT NOT NULL
+  );
+  CREATE TABLE IF NOT EXISTS received_letters (
+    id TEXT PRIMARY KEY NOT NULL,
+    sender_id TEXT NOT NULL,
+    sender_name TEXT NOT NULL,
+    memory_date TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    voice_title TEXT,
+    voice_ms INTEGER,
+    photo_path TEXT,
+    voice_path TEXT,
+    received_at TEXT NOT NULL,
+    opened_at TEXT
+  );
+  CREATE TABLE IF NOT EXISTS outbox (
+    id TEXT PRIMARY KEY NOT NULL,
+    entry_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  `,
+  // v9: each person's phone key (identity.ts), learned from their code or the first page they gave; pages' connections
+  // are signed with it, so even LookBack's server can't step in between.
+  `ALTER TABLE people ADD COLUMN public_key TEXT;`,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;

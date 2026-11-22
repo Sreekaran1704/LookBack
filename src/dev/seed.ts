@@ -60,6 +60,8 @@ function seedEntry(item: SeedItem, photoPath: string | null, voice: { path: stri
     voicePath: voice?.path ?? null,
     voiceWave: voice?.wave ?? null,
     voiceMs: voice?.ms ?? null,
+    reply: null,
+    repliedAt: null,
   };
 }
 

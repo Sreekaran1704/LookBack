@@ -1,15 +1,14 @@
 import { memo, useRef, type ComponentRef } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, type SharedValue } from 'react-native-reanimated';
-import Svg, { Circle, Defs, Ellipse, G, Line, LinearGradient, Path, Pattern, Rect, Stop } from 'react-native-svg';
+import Svg, { Circle, Defs, Line, LinearGradient, Path, Pattern, Rect, Stop } from 'react-native-svg';
 import { tapHaptic } from '../../lib/haptics';
 import { seededRng } from '../../lib/seeded';
 import { useTheme } from '../../theme';
-import { withAlpha } from '../../theme/yearColors';
+import { mixHex, withAlpha } from '../../theme/yearColors';
 import { Polaroid } from './Polaroid';
 import { Raster } from './Raster';
 import { deg, useSvgId } from './shared';
-import { WashiTape } from './WashiTape';
 
 interface Props {
   year: number;
@@ -59,9 +58,9 @@ const COFFEE = '#6B4423';
 /** Elastic band that holds the diary shut, as a share of the cover width from the left. */
 const BAND_AT = 0.8;
 const BAND_W = 9;
-const LABEL_W = 0.66;
-const FACE_Y = 0.7;
-const EYE_GAP = 15;
+/** The cover is leather in a deep shade of the year's color, with squarer corners than a notebook. */
+const LEATHER_DEPTH = 0.62;
+const COVER_RADIUS = 6;
 
 const PAGE_LAYERS = 3;
 const PEEK_RATIO = 0.42;
@@ -69,10 +68,9 @@ const LINEN_LIGHT = '#FFFFFF';
 const LINEN_DARK = '#000000';
 
 /**
- * A year as a little hardback diary with a personality: linen cover lit from the top left, stitched
- * spine, embossed border, an elastic band holding it shut, a paper name label with the year, and a
- * small face. The face shows its age: wide awake when new, content after a year or two, dozing
- * once it is old. Wear (fading, worn corners, scuffs, a coffee ring) builds up with the years.
+ * A year as a leather-bound volume: leather in a deep shade of the year's color lit from the top left, a stitched
+ * spine, a tooled gilt frame, the year in gilt Roman numerals, and a strap holding it shut. Wear (fading, worn
+ * corners, scuffs, a coffee ring) builds up with the years.
  */
 export const AlbumStack = memo(function AlbumStack({
   year,
@@ -89,7 +87,7 @@ export const AlbumStack = memo(function AlbumStack({
   coverOnly = false,
 }: Props) {
   const theme = useTheme();
-  const { colors, sizes, radii, spacing, typography, motion, scrap } = theme;
+  const { colors, sizes, spacing, typography, motion, scrap } = theme;
   const palette = theme.year(year);
   const linenId = useSvgId('linen');
   const lightId = useSvgId('light');
@@ -97,7 +95,6 @@ export const AlbumStack = memo(function AlbumStack({
   const rng = seededRng(`album-${year}`);
   const tilt = rng.range(-scrap.albumTiltDeg, scrap.albumTiltDeg);
   const peekTilt = rng.range(-10, 10);
-  const tapeAngle = rng.range(-12, 12);
   const pressed = useSharedValue(0);
   const bookRef = useRef<ComponentRef<typeof View>>(null);
   const coverStyle = useAnimatedStyle(() => ({
@@ -128,11 +125,11 @@ export const AlbumStack = memo(function AlbumStack({
     angle: rng.range(-0.6, 0.6),
   }));
   const bandX = coverW * BAND_AT;
-  // The face sits in the middle of the cover between the spine and the band.
-  const faceX = (sizes.albumSpine + bandX) / 2 + 2;
-  const faceY = coverH * FACE_Y;
-  // The coffee ring sits low in a corner, half off the cover, clear of the face.
+  // The coffee ring sits low in a corner, half off the cover.
   const ring = { x: rng.range(sizes.albumSpine + 14, sizes.albumSpine + 26), y: rng.range(coverH * 0.9, coverH * 0.97), r: rng.range(15, 19) };
+  // Leather in a deep shade of the year's color, tooled in gilt.
+  const leather = mixHex(palette.primary, LINEN_DARK, LEATHER_DEPTH);
+  const gilt = colors.giltBright;
 
   return (
     <Pressable
@@ -179,7 +176,7 @@ export const AlbumStack = memo(function AlbumStack({
               left: edge * layer,
               width: coverW,
               height: coverH,
-              borderRadius: radii.album,
+              borderRadius: COVER_RADIUS,
               // Pages yellow with age.
               backgroundColor: wear >= 3 ? colors.kraft : layer % 2 ? colors.paperWhite : colors.paper,
               borderWidth: 1,
@@ -198,7 +195,7 @@ export const AlbumStack = memo(function AlbumStack({
               left: 0,
               width: coverW,
               height: coverH,
-              borderRadius: radii.album,
+              borderRadius: COVER_RADIUS,
               backgroundColor: colors.paperWhite,
               borderWidth: 1,
               borderColor: withAlpha(palette.ink, 0.3),
@@ -207,11 +204,11 @@ export const AlbumStack = memo(function AlbumStack({
               gap: spacing.xs,
             }}
           >
-            <Text style={[typography.albumYear, { color: palette.primary, textAlign: 'center', alignSelf: 'stretch', paddingRight: 0 }]}>
+            <Text style={[typography.albumYear, { color: colors.sepia, textAlign: 'center', alignSelf: 'stretch', paddingRight: 0 }]}>
               {year}
             </Text>
             <Text style={[typography.handSmall, { color: colors.inkMuted, textAlign: 'center', alignSelf: 'stretch', paddingRight: 0 }]}>
-              {count} {count === 1 ? 'memory' : 'memories'}
+              {count} {count === 1 ? 'page' : 'pages'}
             </Text>
           </View>
         ) : null}
@@ -228,8 +225,8 @@ export const AlbumStack = memo(function AlbumStack({
           style={{
             width: coverW,
             height: coverH,
-            borderRadius: radii.album,
-            backgroundColor: palette.primary,
+            borderRadius: COVER_RADIUS,
+            backgroundColor: leather,
             overflow: 'hidden',
             // Outline and shadow in the diary's own deep shade, so it stands off a page of the same color.
             borderWidth: 1.5,
@@ -250,7 +247,7 @@ export const AlbumStack = memo(function AlbumStack({
                 <Stop offset="1" stopColor={palette.ink} stopOpacity={1} />
               </LinearGradient>
               <Pattern id={linenId} width={6} height={6} patternUnits="userSpaceOnUse">
-                <Line x1={0} y1={0} x2={6} y2={6} stroke={withAlpha(LINEN_LIGHT, 0.16)} strokeWidth={1} />
+                <Line x1={0} y1={0} x2={6} y2={6} stroke={withAlpha(LINEN_LIGHT, 0.05)} strokeWidth={1} />
                 <Line x1={6} y1={0} x2={0} y2={6} stroke={withAlpha(LINEN_DARK, 0.06)} strokeWidth={1} />
               </Pattern>
             </Defs>
@@ -262,50 +259,13 @@ export const AlbumStack = memo(function AlbumStack({
               x2={sizes.albumSpine + 6}
               y1={8}
               y2={coverH - 8}
-              stroke={withAlpha(LINEN_LIGHT, 0.75)}
-              strokeWidth={1.6}
+              stroke={withAlpha(gilt, 0.55)}
+              strokeWidth={1.2}
               strokeDasharray="5 4"
             />
-            {/* Embossed border: a light line with a dark one just inside it. */}
-            <Rect x={sizes.albumSpine + 11} y={9} width={coverW - sizes.albumSpine - 20} height={coverH - 18} rx={8} stroke={withAlpha(LINEN_LIGHT, 0.28)} strokeWidth={1.4} fill="none" />
-            <Rect x={sizes.albumSpine + 12.4} y={10.4} width={coverW - sizes.albumSpine - 22.8} height={coverH - 20.8} rx={7} stroke={withAlpha(LINEN_DARK, 0.12)} strokeWidth={1} fill="none" />
-
-            {/* Face. */}
-            <G>
-              <Ellipse cx={faceX - EYE_GAP - 9} cy={faceY + 7} rx={6.5} ry={4} fill={LINEN_LIGHT} opacity={0.32} />
-              <Ellipse cx={faceX + EYE_GAP + 9} cy={faceY + 7} rx={6.5} ry={4} fill={LINEN_LIGHT} opacity={0.32} />
-              {wear === 0 ? (
-                <>
-                  <Circle cx={faceX - EYE_GAP} cy={faceY} r={4.6} fill={palette.ink} />
-                  <Circle cx={faceX + EYE_GAP} cy={faceY} r={4.6} fill={palette.ink} />
-                  <Circle cx={faceX - EYE_GAP - 1.4} cy={faceY - 1.6} r={1.6} fill={LINEN_LIGHT} />
-                  <Circle cx={faceX + EYE_GAP - 1.4} cy={faceY - 1.6} r={1.6} fill={LINEN_LIGHT} />
-                </>
-              ) : (
-                <G stroke={palette.ink} strokeWidth={2.6} strokeLinecap="round" fill="none">
-                  {/* Content (arched) eyes for a year or two, then closed and dozing. */}
-                  <Path d={`M ${faceX - EYE_GAP - 5} ${faceY + (wear < 3 ? 2 : -1)} q 5 ${wear < 3 ? -7 : 6} 10 0`} />
-                  <Path d={`M ${faceX + EYE_GAP - 5} ${faceY + (wear < 3 ? 2 : -1)} q 5 ${wear < 3 ? -7 : 6} 10 0`} />
-                </G>
-              )}
-              <Path
-                d={wear < 3 ? `M ${faceX - 5} ${faceY + 8} q 5 5.5 10 0` : `M ${faceX - 3} ${faceY + 10} q 3 2 6 0`}
-                stroke={palette.ink}
-                strokeWidth={2.4}
-                strokeLinecap="round"
-                fill="none"
-              />
-              {wear >= 3 ? (
-                <Path
-                  d={`M ${faceX + EYE_GAP + 12} ${faceY - 20} h 7 l -7 7 h 7`}
-                  stroke={withAlpha(LINEN_LIGHT, 0.85)}
-                  strokeWidth={2}
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                  fill="none"
-                />
-              ) : null}
-            </G>
+            {/* A tooled gilt frame: a fine outer line and a heavier one just inside it. */}
+            <Rect x={sizes.albumSpine + 11} y={9} width={coverW - sizes.albumSpine - 20} height={coverH - 18} rx={3} stroke={gilt} strokeOpacity={0.75} strokeWidth={0.8} fill="none" />
+            <Rect x={sizes.albumSpine + 14.5} y={12.5} width={coverW - sizes.albumSpine - 27} height={coverH - 25} rx={2} stroke={gilt} strokeOpacity={0.9} strokeWidth={1.4} fill="none" />
 
             {/* Sun-faded cover. */}
             <Rect x={0} y={0} width={coverW} height={coverH} fill={colors.paper} opacity={wear * FADE_PER_YEAR} />
@@ -349,67 +309,23 @@ export const AlbumStack = memo(function AlbumStack({
             <Rect x={bandX + 2.5} y={0} width={BAND_W} height={coverH} fill={LINEN_DARK} opacity={0.16} />
             <Rect x={bandX} y={0} width={BAND_W} height={coverH} fill={`url(#${bandId})`} />
           </Svg>
-          {/* Paper name label with the year written on it. */}
-          <View
-            style={{
-              position: 'absolute',
-              top: coverH * 0.14,
-              left: faceX - (coverW * LABEL_W) / 2,
-              width: coverW * LABEL_W,
-              backgroundColor: colors.paperWhite,
-              borderRadius: radii.paper * 2,
-              borderWidth: 1.5,
-              borderColor: withAlpha(palette.ink, 0.35),
-              paddingVertical: spacing.xxs,
-              transform: [{ rotate: deg(-3 + tilt) }],
-              boxShadow: theme.shadow(palette.ink, 0.5),
-            }}
-          >
-            {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
-            {/* One line, scaled to the label: diaries on the shelf are narrower than in a grid. */}
+          {/* The year tooled in gilt in the middle of the cover, between two short rules. */}
+          <View pointerEvents="none" style={{ position: 'absolute', top: coverH * 0.34, left: sizes.albumSpine + 16, width: bandX - sizes.albumSpine - 20, alignItems: 'center', gap: spacing.xs }}>
+            <View style={{ width: '50%', height: 1, backgroundColor: gilt, opacity: 0.8 }} />
             <Text
               numberOfLines={1}
               adjustsFontSizeToFit
-              minimumFontScale={0.6}
+              minimumFontScale={0.5}
               textBreakStrategy="simple"
-              style={[typography.albumYear, { color: palette.ink, textAlign: 'center', paddingRight: 0 }]}
+              style={[typography.albumYear, { color: gilt, textAlign: 'center', alignSelf: 'stretch', paddingRight: 0, letterSpacing: 2, textShadowColor: 'rgba(0,0,0,0.6)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 0 }]}
             >
               {year}
             </Text>
+            <View style={{ width: '50%', height: 1, backgroundColor: gilt, opacity: 0.8 }} />
           </View>
         </View>
         </Raster>
         </Animated.View>
-
-        <WashiTape
-          width={coverW * 0.38}
-          color={palette.secondary}
-          color2={colors.paperWhite}
-          pattern={rng.pick(['stripes', 'dots', 'zigzag'] as const)}
-          angle={tapeAngle}
-          style={{ position: 'absolute', top: peekTop - sizes.tapeHeight / 3, left: spacing.sm }}
-        />
-
-        {/* Count sticker. */}
-        <View
-          style={{
-            position: 'absolute',
-            right: -spacing.xs,
-            bottom: -spacing.xs,
-            width: sizes.countSticker,
-            height: sizes.countSticker,
-            borderRadius: sizes.countSticker / 2,
-            backgroundColor: colors.paperWhite,
-            borderWidth: 3,
-            borderColor: palette.secondary,
-            alignItems: 'center',
-            justifyContent: 'center',
-            transform: [{ rotate: deg(-tilt * 3) }],
-            boxShadow: theme.shadow(palette.primary, 0.6),
-          }}
-        >
-          <Text style={[typography.handSmall, { color: colors.ink, paddingRight: 0 }]}>{count}</Text>
-        </View>
 
         {/* This year's diary still has its ribbon bookmark hanging out. */}
         {age <= 0 ? (
@@ -421,7 +337,7 @@ export const AlbumStack = memo(function AlbumStack({
               top: peekTop + coverH - spacing.xs,
               width: spacing.md,
               height: spacing.xl,
-              backgroundColor: palette.secondary,
+              backgroundColor: colors.wax,
               borderBottomLeftRadius: spacing.xs,
               borderBottomRightRadius: spacing.xs,
               zIndex: -1,

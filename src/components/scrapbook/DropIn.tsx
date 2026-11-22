@@ -17,19 +17,19 @@ const SETTLE_EXTRA_DEG = 8;
  * Only the first `dropMaxAnimated` items animate (caps simultaneous animations); with
  * "reduce motion" on, items simply fade in.
  */
-export function DropIn({ index, children, style }: { index: number; children: ReactNode; style?: StyleProp<ViewStyle> }) {
+export function DropIn({ index, children, style, ready = true }: { index: number; children: ReactNode; style?: StyleProp<ViewStyle>; ready?: boolean }) {
   const { motion } = useTheme();
   const reduceMotion = useReducedMotion();
   const animate = index < motion.dropMaxAnimated;
   const progress = useSharedValue(animate ? 0 : 1);
 
   useEffect(() => {
-    if (!animate) return;
+    if (!animate || !ready) return;
     const delay = index * motion.dropStaggerMs;
     progress.set(
       withDelay(delay, reduceMotion ? withTiming(1, { duration: motion.imageFadeMs }) : withSpring(1, motion.drop)),
     );
-  }, [animate, index, motion.drop, motion.dropStaggerMs, motion.imageFadeMs, progress, reduceMotion]);
+  }, [animate, ready, index, motion.drop, motion.dropStaggerMs, motion.imageFadeMs, progress, reduceMotion]);
 
   const animatedStyle = useAnimatedStyle(() => {
     const p = progress.get();

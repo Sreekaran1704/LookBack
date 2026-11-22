@@ -1,5 +1,6 @@
 import { entriesRepository, settingsRepository } from '../data';
-import { addDays, formatMonthDay, matchesOnThisDay, parseLocalDate, toLocalDate } from '../lib/dates';
+import { iconStateFor } from '../lib/appIcon';
+import { addDays, formatMonthDay, matchesOnThisDay, parseLocalDate, toLocalDate, yearProgress } from '../lib/dates';
 import { makeTheme } from '../theme';
 import type { TodayWidgetProps } from './TodayWidget';
 
@@ -18,8 +19,11 @@ export async function loadTodayWidget(now: Date = new Date()): Promise<TodayWidg
   for (let d = entry ? todayDate : addDays(todayDate, -1); dates.includes(d); d = addDays(d, -1)) streak += 1;
   const firstLines = entry?.text.trim().split('\n').slice(0, 2).join(' ').slice(0, LINE_LIMIT) ?? '';
   return {
-    today: entry ? { id: entry.id, text: firstLines, hasPhoto: entry.photoPath !== null } : null,
+    today: entry ? { id: entry.id, text: firstLines, hasPhoto: entry.photoPath !== null, hasVoice: entry.voicePath !== null } : null,
     dateLabel: formatMonthDay(todayDate),
+    weekday: now.toLocaleDateString('en-US', { weekday: 'long' }),
+    yearProgress: yearProgress(todayDate),
+    state: iconStateFor(dates, todayDate, now.getHours()),
     letters: dates.filter((d) => d < todayDate && matchesOnThisDay(d, todayDate)).length,
     streak,
     paper: theme.paper,

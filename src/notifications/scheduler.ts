@@ -27,6 +27,9 @@ let channelReady = false;
  * Call once at startup. Never throws: a notification problem must not stop the app from opening.
  * (Expo Go on Android has been seen to reject setNotificationChannelAsync.)
  */
+/** The channel the page alerts arrive on (named in the server's alert function). */
+export const PAGES_CHANNEL_ID = 'pages';
+
 export async function configureNotifications(): Promise<void> {
   if (configured) return;
   configured = true;
@@ -45,6 +48,16 @@ export async function configureNotifications(): Promise<void> {
         name: 'Letters from your past self',
         description: 'A little note on days you saved a memory, a year (or more) ago.',
         importance: AndroidImportance.DEFAULT,
+        sound: CHIME,
+        vibrationPattern: VIBRATION,
+        enableVibrate: true,
+        lightColor: yearPalette(2025).primary,
+      });
+      // Alerts that someone has a page for you (sent by Firebase while LookBack is closed, like Blip's).
+      await Notifications.setNotificationChannelAsync(PAGES_CHANNEL_ID, {
+        name: 'Pages from your people',
+        description: 'When someone you trust has a page for you. It comes straight from their phone when you open it.',
+        importance: AndroidImportance.HIGH,
         sound: CHIME,
         vibrationPattern: VIBRATION,
         enableVibrate: true,

@@ -4,7 +4,7 @@ Everything prepared for you:
 
 | What | Where |
 |---|---|
-| Signed app bundle, your LookBack key | Rebuild before uploading (see the end of this file): `release/LookBack-1.2.0.aab` predates the bunny and haptics update, and each Play upload needs a higher versionCode |
+| Signed app bundle, your LookBack key | `release/LookBack-1.3.0.aab` (versionCode 4, built 23 Nov 2026, no developer tools) |
 | Listing text, Data safety, content rating, target audience answers | `docs/play-store/listing.md` |
 | App icon 512×512 | `docs/play-store/graphics/icon-512.png` |
 | Feature graphic 1024×500 | `docs/play-store/graphics/feature-graphic-1024x500.png` |
@@ -15,6 +15,16 @@ Because your developer account is a **new personal account**, Google requires a 
 testers who stay opted in for 14 days in a row** before you can apply for production. Plan for about 2–3 weeks.
 
 ---
+
+## Status (23 Nov 2026)
+- Developer account: **not created yet** (step 3).
+- Privacy policy: updated for sharing (Supabase introductions, Firebase alerts, delete sharing account) but **not
+  online yet** (step 1 gives a 404 until Pages is on).
+- Google sign-in: still **Testing** (test users: sreekaran.2021@gmail.com, geetharan871@gmail.com). Do step 2 before
+  the closed test, or every tester has to be added as a test user too.
+- Data safety now includes email, name and the alert push address, and an account-deletion URL (see `listing.md`).
+- Account deletion requests from the web (people who can't open the app): you promise to handle them within 7 days.
+  Delete them in Supabase → Authentication → Users (that cascades to everything the sharing service keeps).
 
 ## 1. Put the privacy policy online (5 min)
 1. Commit and push `docs/privacy/`, `docs/.nojekyll` and `docs/play-store/`.
@@ -70,7 +80,7 @@ government/financial/health (No).
 ## 8. Closed test (the 14 days)
 1. Testing → **Closed testing** → *Create track* (or use "Alpha") → **Testers**: add at least 12 Gmail addresses
    (or a Google Group). Friends and family are fine; they need an Android phone.
-2. **Create release** → upload `release/LookBack-1.2.0.aab` → release name `1.2.0` → release notes from
+2. **Create release** → upload `release/LookBack-1.3.0.aab` → release name `1.3.0` → release notes from
    `listing.md` → *Review release* → **Start rollout to Closed testing**.
 3. Countries: pick where testers live (or all).
 4. Send testers the **opt-in link** (Testers tab). Each one taps *Become a tester*, then installs LookBack from Play

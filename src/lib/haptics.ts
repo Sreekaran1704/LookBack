@@ -14,6 +14,7 @@ import { Platform } from 'react-native';
  * - arrive: a new page has slid into place
  * - thud: something heavy lands (the diary's cover falls open)
  * - confirm: saved; reject: something is let go for good
+ * - tear: one perforation giving way as a page is torn out (varied, so a run of them feels like paper ripping)
  *
  * Haptics are best-effort: a missing engine never breaks a tap.
  */
@@ -68,4 +69,15 @@ export function successHaptic(): void {
 
 export function rejectHaptic(): void {
   play(Haptics.AndroidHaptics.Reject, () => Haptics.notificationAsync(Haptics.NotificationFeedbackType.Warning));
+}
+
+/**
+ * One perforation of a page giving way. `grain` (any number; the hole's index works) picks one of three slightly
+ * different ticks, so a run of them reads as paper ripping rather than a metronome.
+ */
+export function tearHaptic(grain: number): void {
+  const kind = Math.abs(Math.round(grain)) % 3;
+  if (kind === 0) play(Haptics.AndroidHaptics.Clock_Tick, impact(Haptics.ImpactFeedbackStyle.Rigid));
+  else if (kind === 1) play(Haptics.AndroidHaptics.Text_Handle_Move, impact(Haptics.ImpactFeedbackStyle.Light));
+  else play(Haptics.AndroidHaptics.Keyboard_Tap, impact(Haptics.ImpactFeedbackStyle.Soft));
 }

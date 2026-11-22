@@ -22,6 +22,9 @@ export interface EntriesRepository {
   listDates(): Promise<LocalDate[]>;
   /** Creates or updates the single entry for that day. */
   saveForDate(input: SaveEntryInput): Promise<Entry>;
+  /** Writes back to your past self on a memory that came back (empty text takes the reply away). */
+  writeBack(id: string, reply: string): Promise<Entry>;
+  labelVoice(id: string, title: string): Promise<void>;
   /** Inserts an entry as-is (used by the dev seeder and, later, restore). */
   insertRaw(entry: Entry): Promise<void>;
   /**
@@ -51,10 +54,13 @@ interface EntryRow {
   voice_uri: string | null;
   voice_wave: string | null;
   voice_ms: number | null;
+  reply: string | null;
+  replied_at: string | null;
+  voice_title: string | null;
 }
 
-const COLUMNS = 'id, local_date, text, photo_uri, created_at, updated_at, object_type, tape_pattern, sticker, sticker_color, tape_color, voice_uri, voice_wave, voice_ms';
-const PLACEHOLDERS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
+const COLUMNS = 'id, local_date, text, photo_uri, created_at, updated_at, object_type, tape_pattern, sticker, sticker_color, tape_color, voice_uri, voice_wave, voice_ms, reply, replied_at, voice_title';
+const PLACEHOLDERS = '?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?';
 
 function toEntry(row: EntryRow): Entry {
   return {
@@ -72,11 +78,14 @@ function toEntry(row: EntryRow): Entry {
     voicePath: row.voice_uri,
     voiceWave: parseWave(row.voice_wave),
     voiceMs: row.voice_ms,
+    reply: row.reply,
+    repliedAt: row.replied_at,
+    voiceTitle: row.voice_title ?? null,
   };
 }
 
 function rowValues(e: Entry) {
-  return [e.id, e.localDate, e.text, e.photoPath, e.createdAt, e.updatedAt, e.objectType, e.tapePattern, e.sticker, e.stickerColor, e.tapeColor, e.voicePath, encodeWave(e.voiceWave), e.voiceMs] as const;
+  return [e.id, e.localDate, e.text, e.photoPath, e.createdAt, e.updatedAt, e.objectType, e.tapePattern, e.sticker, e.stickerColor, e.tapeColor, e.voicePath, encodeWave(e.voiceWave), e.voiceMs, e.reply, e.repliedAt, e.voiceTitle ?? null] as const;
 }
 
 function createSqliteEntriesRepository(): EntriesRepository {
@@ -197,6 +206,8 @@ function createSqliteEntriesRepository(): EntriesRepository {
           voicePath,
           voiceWave,
           voiceMs,
+          reply: null,
+          repliedAt: null,
           createdAt: now,
           updatedAt: now,
           ...nextStyle,
@@ -208,6 +219,27 @@ function createSqliteEntriesRepository(): EntriesRepository {
       if (voiceToDelete && voiceToDelete !== voicePath) deleteVoice(voiceToDelete);
       changes.emit();
       return saved;
+    },
+
+    async labelVoice(id, title) {
+      const existing = await getById(id);
+      if (!existing?.voicePath) throw new Error('This memory has no recording.');
+      const db = await getDb();
+      await db.runAsync('UPDATE entries SET voice_title = ?, updated_at = ? WHERE id = ?', title.trim().slice(0, 60) || null, new Date().toISOString(), id);
+      changes.emit();
+    },
+
+    async writeBack(id, reply) {
+      const db = await getDb();
+      const existing = await getById(id);
+      if (!existing) throw new Error('That memory is no longer here.');
+      const now = new Date().toISOString();
+      const trimmed = reply.trim();
+      const next = trimmed.length > 0 ? trimmed : null;
+      const repliedAt = next ? now : null;
+      await db.runAsync('UPDATE entries SET reply = ?, replied_at = ?, updated_at = ? WHERE id = ?', next, repliedAt, now, id);
+      changes.emit();
+      return { ...existing, reply: next, repliedAt, updatedAt: now };
     },
 
     async insertRaw(entry) {

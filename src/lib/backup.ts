@@ -31,6 +31,10 @@ export interface BackupEntry {
   voicePath: string | null;
   voiceWave: number[] | null;
   voiceMs: number | null;
+  /** A reply to your past self (added later; older backups lack it, read as null). */
+  reply: string | null;
+  repliedAt: string | null;
+  voiceTitle?: string | null;
 }
 
 /** A memory the person deleted, kept so a sync doesn't bring it back from another copy. */
@@ -90,6 +94,9 @@ export function parseManifest(json: string): BackupManifest {
       voicePath: strOrNull(e.voicePath),
       voiceWave: parseWave(e.voiceWave),
       voiceMs: typeof e.voiceMs === 'number' && Number.isFinite(e.voiceMs) ? e.voiceMs : null,
+      reply: strOrNull(e.reply),
+      repliedAt: strOrNull(e.repliedAt),
+      voiceTitle: strOrNull(e.voiceTitle),
     });
   }
   const deleted: Tombstone[] = [];

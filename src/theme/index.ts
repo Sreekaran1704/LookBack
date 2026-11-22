@@ -1,5 +1,6 @@
 import { createContext, useContext } from 'react';
 import {
+  control,
   darkColors,
   lightColors,
   motion,
@@ -13,7 +14,7 @@ import {
   type ColorTokens,
 } from './tokens';
 import { DEFAULT_LOOK, navColors, paperByName, type Look, type NavColors, type Paper } from './papers';
-import { withAlpha, yearPalette, type YearPalette } from './yearColors';
+import { mixHex, withAlpha, yearPalette, type YearPalette } from './yearColors';
 
 export interface Theme {
   scheme: 'light' | 'dark';
@@ -26,6 +27,8 @@ export interface Theme {
   nav: NavColors;
   colors: ColorTokens;
   spacing: typeof spacing;
+  /** One size and make for every control (bar, buttons, slips, switches). */
+  control: typeof control;
   radii: typeof radii;
   sizes: typeof sizes;
   typography: typeof typography;
@@ -37,21 +40,53 @@ export interface Theme {
   shadow: (tint?: string, lift?: number) => string | undefined;
 }
 
-const base = { spacing, radii, sizes, typography, motion, scrap, opacity, year: yearPalette };
+const base = { spacing, control, radii, sizes, typography, motion, scrap, opacity, year: yearPalette };
 
-const DARK_DOTS = 'rgba(255, 255, 255, 0.09)';
 const cache = new Map<string, Theme>();
 
-/** The whole theme for a page look: the chosen paper as the desk, in its light or dark tone. */
+const WHITE = '#FFFFFF';
+const BLACK = '#000000';
+/** How the paper's accent becomes the diary's accents: darkened for lettering by day, lifted by lamplight. */
+const ACCENT_TEXT_DAY = 0.3;
+const ACCENT_LIFT_NIGHT = 0.15;
+const ACCENT_TEXT_NIGHT = 0.4;
+const STITCH_ALPHA = 0.5;
+/** How much of the paper's color warms the cream cards. */
+const CARD_TINT_DAY = 0.4;
+const CARD_TINT_NIGHT = 0.2;
+
+/** The whole theme for a look: the chosen leather as the desk (the cover every page sits on), by day or lamplight. */
 export function makeTheme(look: Look): Theme {
   const key = `${look.paper}:${look.tone}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const paper = paperByName(look.paper);
   const dark = look.tone === 'dark';
+  // The chosen paper colors the whole diary, not just the page: its accent is the gilt (titles, rules, the highlighter
+  // wash, what's chosen), the stitching is in it, and the cards are the same cream warmed with a little of the paper.
+  // By lamplight the same accent is lifted so it reads on the deep page.
+  const accent = paper.dots;
   const colors: ColorTokens = dark
-    ? { ...darkColors, desk: paper.dark, deskDeep: paper.darkDeep, gridLine: DARK_DOTS }
-    : { ...lightColors, desk: paper.light, deskDeep: paper.lightDeep, gridLine: withAlpha(paper.dots, 0.32) };
+    ? {
+        ...darkColors,
+        desk: paper.dark,
+        deskDeep: paper.darkDeep,
+        gilt: mixHex(accent, WHITE, ACCENT_LIFT_NIGHT),
+        giltBright: mixHex(accent, WHITE, ACCENT_TEXT_NIGHT),
+        stitch: withAlpha(mixHex(accent, WHITE, ACCENT_LIFT_NIGHT), STITCH_ALPHA),
+        primary: mixHex(accent, WHITE, ACCENT_LIFT_NIGHT),
+        panel: mixHex(darkColors.panel, paper.light, CARD_TINT_NIGHT),
+      }
+    : {
+        ...lightColors,
+        desk: paper.light,
+        deskDeep: paper.lightDeep,
+        gilt: accent,
+        giltBright: mixHex(accent, BLACK, ACCENT_TEXT_DAY),
+        stitch: withAlpha(accent, STITCH_ALPHA),
+        primary: accent,
+        panel: mixHex(lightColors.panel, paper.light, CARD_TINT_DAY),
+      };
   const theme: Theme = {
     scheme: dark ? 'dark' : 'light',
     dark,
@@ -60,7 +95,8 @@ export function makeTheme(look: Look): Theme {
     nav: navColors(paper, look.tone),
     colors,
     ...base,
-    shadow: dark ? (_tint, lift = 1) => paperShadow(darkColors.shadowBase, lift, true) : (tint, lift = 1) => paperShadow(tint ?? lightColors.shadowBase, lift, false),
+    // Soft warm shadows on the pale day cover; deep ones at night.
+    shadow: (_tint, lift = 1) => paperShadow(colors.shadowBase, lift, dark),
   };
   cache.set(key, theme);
   return theme;

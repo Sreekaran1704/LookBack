@@ -17,9 +17,9 @@ export const googleConfigured = WEB_CLIENT_ID.length > 0;
 
 let configured = false;
 function ensureConfigured(): void {
-  if (!googleConfigured) throw new Error('Google Drive backup is not set up in this build.');
+  if (!googleConfigured) throw new Error('Google sign-in is not set up in this build.');
   if (configured) return;
-  GoogleOneTapSignIn.configure({ webClientId: WEB_CLIENT_ID, scopes: [DRIVE_SCOPE] });
+  GoogleOneTapSignIn.configure({ webClientId: WEB_CLIENT_ID });
   configured = true;
 }
 
@@ -42,13 +42,22 @@ export function restoreGoogleAccount(): string | null {
 }
 
 /** Lets the person pick the Google account to back up to. Returns its email, or null if they backed out. */
-export async function chooseGoogleAccount(): Promise<string | null> {
+export async function chooseGoogleIdentity(nonceDigest?: string) {
   ensureConfigured();
+  // Each interactive attempt gets its own nonce; backup-only sign-in uses the SDK default.
+  GoogleOneTapSignIn.configure({ webClientId: WEB_CLIENT_ID, nonce: nonceDigest ?? null });
   await GoogleOneTapSignIn.checkPlayServices(true);
   // Always show the account chooser: this is "the Drive of their choice", not whichever account signs in silently.
   let response = await GoogleOneTapSignIn.presentExplicitSignIn();
   if (isNoSavedCredentialFoundResponse(response)) response = await GoogleOneTapSignIn.createAccount();
-  return isSuccessResponse(response) ? (response.data.user.email ?? response.data.user.id) : null;
+  return isSuccessResponse(response) ? response.data : null;
+}
+
+export async function chooseGoogleAccount(): Promise<string | null> {
+  const identity = await chooseGoogleIdentity();
+  if (!identity) return null;
+  const result = await GoogleOneTapSignIn.requestScopes([DRIVE_SCOPE]);
+  return result.accessToken ? (identity.user.email ?? identity.user.id) : null;
 }
 
 export async function signOutOfGoogle(): Promise<void> {

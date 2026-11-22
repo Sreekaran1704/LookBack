@@ -6,16 +6,15 @@ import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSprin
 import { scheduleOnRN } from 'react-native-worklets';
 import Svg, { Path, Rect } from 'react-native-svg';
 import type { Entry } from '../../data';
-import { parseLocalDate, yearsAgoLabel, yearsBetween } from '../../lib/dates';
+import { formatDisplayDate, parseLocalDate, yearsAgoLabel, yearsBetween } from '../../lib/dates';
 import { gestureEndHaptic, gestureStartHaptic, selectHaptic, toggleHaptic } from '../../lib/haptics';
-import { seededRng, STICKERS } from '../../lib/seeded';
-import { useTheme } from '../../theme';
-import { Buddy } from './Buddy';
+import { seededRng } from '../../lib/seeded';
+import { mixHex, useTheme, withAlpha } from '../../theme';
+import { useProfile } from '../../hooks/useData';
 import { DropIn } from './DropIn';
 import { ScrapObject } from './ScrapObject';
 import { deg } from './shared';
 import { Raster } from './Raster';
-import { Sticker } from './Sticker';
 
 interface Props {
   /** Matches for today, most recent year first. */
@@ -44,16 +43,27 @@ const RISE_RATIO = 0.62;
 const FLAP_RATIO = 0.56;
 const LETTER_RATIO = 0.84;
 const LETTER_INSET = 14;
-const CORNER = 10;
-const SEAL = 40;
-const STAMP = 44;
+const CORNER = 4;
+const STAMP = 46;
+/** The postmark struck across the stamp. */
+const POSTMARK = 44;
+/** The inside of an envelope is a shade deeper than its paper. */
+const INSIDE_SHADE = 0.16;
+const SHADE = '#000000';
+/** 90s airmail: the red and blue chevrons round the edge, the PAR AVION label. */
+const AIRMAIL_RED = '#C8302B';
+const AIRMAIL_BLUE = '#1F4EA0';
+const AIRMAIL_LABEL = '#F4F6FB';
+const AIRMAIL_STRIPES = `repeating-linear-gradient(135deg, ${AIRMAIL_RED} 0px, ${AIRMAIL_RED} 8px, transparent 8px, transparent 14px, ${AIRMAIL_BLUE} 14px, ${AIRMAIL_BLUE} 22px, transparent 22px, transparent 28px)`;
+const AIRMAIL_EDGE = 6;
 const FOLD_OPACITY = 0.35;
 /** How long after a tap the envelope stays live (the flap and letter spring), before it is cached again. */
 const SETTLE_MS = 900;
 
 /**
- * "On this day" as letters from your past self: one sealed envelope per earlier year. Tap an
- * envelope and its flap opens and the memory slides out; tap the memory to read it in full.
+ * "On this day" as letters from your past self: one cream envelope per earlier year, sealed with wax pressed with
+ * the diary's stamp, a postage stamp with the year and today's postmark. Tap an envelope and its flap opens and
+ * the page slides out; tap the page to read it in full.
  * Several years make a deck: swipe the top letter away and it tucks itself in at the back, or tap a
  * year's stamp underneath to bring that letter to the top.
  */
@@ -129,11 +139,10 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
   return (
     <View style={{ alignItems: 'center', gap: spacing.md }}>
       <View style={{ width, height: rise + height + DECK_STEP_Y * (DECK_VISIBLE - 1) }}>
-        {/* The bunny announcing the post, in the space the open letter rises into. */}
-        <View pointerEvents="none" style={[styles.perch, { position: 'absolute', left: 0, right: 0, top: 0, height: rise, gap: spacing.sm }]}>
-          <Buddy mood="wave" accent={theme.year(parseLocalDate(frontEntry?.localDate ?? today).year).primary} size={Math.min(sizes.buddy, rise)} style={{ marginBottom: -spacing.sm }} />
-          <Text style={[typography.handSmall, { color: colors.onDeskMuted, flex: 1, paddingBottom: spacing.md }]}>
-            {`psst… ${entries.length} letters from your past self! Swipe to shuffle, tap to open.`}
+        {/* A line announcing the post, in the space the open letter rises into. */}
+        <View pointerEvents="none" style={[styles.perch, { position: 'absolute', left: 0, right: 0, top: 0, height: rise }]}>
+          <Text style={[typography.caption, { color: colors.onDeskMuted, flex: 1, textAlign: 'center', paddingBottom: spacing.lg }]}>
+            {`${entries.length} letters came back from your past self. Swipe to shuffle, tap one to open it.`}
           </Text>
         </View>
         <GestureDetector gesture={pan}>
@@ -153,7 +162,7 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
 
       {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
       {frontEntry ? (
-        <Text style={[typography.handLarge, { color: colors.onDesk, textAlign: 'center', alignSelf: 'stretch' }]}>
+        <Text style={[typography.headline, { color: colors.giltBright, textAlign: 'center', alignSelf: 'stretch' }]}>
           {yearsAgoLabel(yearsBetween(frontEntry.localDate, today))}
         </Text>
       ) : null}
@@ -161,7 +170,6 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
       <View style={[styles.stamps, { gap: spacing.md }]}>
         {entries.map((entry, index) => {
           const year = parseLocalDate(entry.localDate).year;
-          const palette = theme.year(year);
           const on = index === front;
           return (
             <Pressable
@@ -174,17 +182,17 @@ function LetterDeck({ entries, today, onOpen, width }: Props & { width: number }
               style={{
                 width: STAMP,
                 height: STAMP * 0.8,
-                backgroundColor: on ? palette.primary : colors.paperWhite,
+                backgroundColor: on ? colors.primary : colors.paperWhite,
                 borderWidth: 2,
                 borderStyle: 'dashed',
-                borderColor: on ? colors.paperWhite : palette.primary,
+                borderColor: on ? colors.paperWhite : colors.sepia,
                 alignItems: 'center',
                 justifyContent: 'center',
-                boxShadow: theme.shadow(palette.primary, on ? 1.2 : 0.5),
+                boxShadow: theme.shadow(undefined, on ? 1.2 : 0.5),
                 transform: [{ rotate: on ? '-6deg' : '0deg' }, { translateY: on ? -4 : 0 }, { scale: on ? 1.1 : 1 }],
               }}
             >
-              <Text style={[typography.stamp, { color: on ? colors.paperWhite : palette.primary, paddingRight: 0, letterSpacing: 0 }]}>{year}</Text>
+              <Text style={[typography.stamp, { color: on ? colors.onPrimary : colors.sepia, paddingRight: 0, letterSpacing: 0 }]}>{year}</Text>
             </Pressable>
           );
         })}
@@ -251,7 +259,7 @@ interface LetterProps {
   today: string;
   width: number;
   onOpen: (id: string) => void;
-  /** Only the first envelope gets the buddy; the rest just get a note. */
+  /** The first letter's line says a letter came back; any others say "and one from". */
   first: boolean;
   /** Show the note above the sealed envelope (off in a deck, which has one note for all). */
   perch?: boolean;
@@ -263,7 +271,7 @@ interface LetterProps {
 
 function Letter({ entry, today, width, onOpen, first, perch = true, label = true, closeKey }: LetterProps) {
   const theme = useTheme();
-  const { colors, spacing, typography, motion, sizes } = theme;
+  const { colors, spacing, typography, motion } = theme;
   const reduceMotion = useReducedMotion();
   const [open, setOpen] = useState(false);
   // While the flap moves, the envelope is drawn live; once it is shut and still it becomes a texture.
@@ -271,11 +279,16 @@ function Letter({ entry, today, width, onOpen, first, perch = true, label = true
   const progress = useSharedValue(0);
 
   const year = parseLocalDate(entry.localDate).year;
-  const palette = theme.year(year);
+  const { data: profile } = useProfile();
+  const name = profile?.name?.trim() ?? '';
   const rng = seededRng(`letter-${entry.id}`);
   const tilt = rng.range(-1.5, 1.5);
-  const seal = rng.pick(STICKERS);
-  const stampTilt = rng.range(-8, 8);
+  const stampTilt = rng.range(-6, 6);
+  const postmarkTilt = rng.range(-18, 4);
+  // Airmail envelopes were white paper.
+  const paper = colors.paperWhite;
+  const inside = mixHex(colors.paper, SHADE, INSIDE_SHADE);
+  const line = withAlpha(colors.ink, 0.28);
 
   const height = width * ENVELOPE_RATIO;
   const rise = height * RISE_RATIO;
@@ -315,24 +328,23 @@ function Letter({ entry, today, width, onOpen, first, perch = true, label = true
     <View style={{ width, gap: spacing.md }}>
       {/* A sealed, still envelope is kept as a texture: its soft shadow is drawn once instead of every frame
           (the bunnies bob all the time, which would otherwise redraw it 60 times a second). */}
-      <Raster enabled={!open && !settling && !(perch && first)}>
+      <Raster enabled={!open && !settling}>
       <View style={{ width, height: rise + height, transform: [{ rotate: deg(tilt) }] }}>
         {/* Waiting on top of the sealed envelope. */}
-        <Animated.View pointerEvents="none" style={[styles.perch, { height: rise, gap: spacing.sm, paddingHorizontal: spacing.md }, closedOnly]}>
-          {perch && first ? <Buddy mood="wave" accent={palette.primary} size={Math.min(sizes.buddy, rise)} style={{ marginBottom: -spacing.sm }} /> : null}
+        <Animated.View pointerEvents="none" style={[styles.perch, { height: rise, paddingHorizontal: spacing.md }, closedOnly]}>
           {perch ? (
-            <Text style={[typography.handSmall, { color: colors.onDeskMuted, flex: 1, paddingBottom: spacing.md }]}>
-              {first ? `psst… a letter from ${year}. Tap to open!` : `…and one from ${year}`}
+            <Text style={[typography.caption, { color: colors.onDeskMuted, flex: 1, textAlign: 'center', paddingBottom: spacing.lg }]}>
+              {first ? `A letter came back, from ${year}. Tap to open it.` : `…and one from ${year}`}
             </Text>
           ) : null}
         </Animated.View>
 
         <View style={{ position: 'absolute', top: rise, width, height }}>
           {/* Inside of the envelope. */}
-          <View style={[StyleSheet.absoluteFill, { backgroundColor: palette.secondary, borderRadius: CORNER }]} />
+          <View style={[StyleSheet.absoluteFill, { backgroundColor: inside, borderRadius: CORNER }]} />
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: -flapH, width, height: flapH, transformOrigin: 'bottom' }, openFlap]}>
             <Svg width={width} height={flapH} style={{ transform: [{ scaleY: -1 }] }}>
-              <Path d={flapPath} fill={colors.paperWhite} stroke={palette.primary} strokeWidth={1.5} strokeLinejoin="round" />
+              <Path d={flapPath} fill={paper} stroke={line} strokeWidth={1} strokeLinejoin="round" />
             </Svg>
           </Animated.View>
 
@@ -355,22 +367,28 @@ function Letter({ entry, today, width, onOpen, first, perch = true, label = true
             style={[StyleSheet.absoluteFill, { top: height * 0.42, borderBottomLeftRadius: CORNER, borderBottomRightRadius: CORNER, overflow: 'hidden' }]}
           >
             <Svg width={width} height={height * 0.58}>
-              <Rect x={0} y={0} width={width} height={height * 0.58} fill={palette.tint} />
+              <Rect x={0} y={0} width={width} height={height * 0.58} fill={paper} />
               <Path
                 d={`M 0 ${height * 0.58} L ${width / 2} ${height * 0.1} L ${width} ${height * 0.58}`}
-                stroke={palette.primary}
-                strokeWidth={1.5}
+                stroke={colors.ink}
+                strokeWidth={1}
                 fill="none"
                 opacity={FOLD_OPACITY}
               />
             </Svg>
-            <View style={{ position: 'absolute', left: spacing.lg, right: STAMP + spacing.xl, bottom: spacing.sm }}>
-              <Text numberOfLines={1} style={[typography.handSmall, { color: colors.inkMuted }]}>to: me, today</Text>
-              <Text numberOfLines={1} style={[typography.hand, { color: colors.ink }]}>
-                from: past me
-              </Text>
+            {/* PAR AVION, in the top left corner of the front. */}
+            <View style={{ position: 'absolute', left: spacing.lg, top: spacing.sm, borderWidth: 1.2, borderColor: AIRMAIL_BLUE, paddingHorizontal: 5, paddingVertical: 1, backgroundColor: AIRMAIL_LABEL }}>
+              <Text style={[typography.stamp, { color: AIRMAIL_BLUE, fontSize: 7, lineHeight: 10, letterSpacing: 1.2, paddingRight: 0 }]}>PAR AVION</Text>
             </View>
-            {/* Postage stamp with the year. */}
+            {/* The address, handwritten on ruled lines: to you, by name, to open today; and under it, who sent it. */}
+            <View style={{ position: 'absolute', left: spacing.lg + spacing.md, right: STAMP + spacing.xl, bottom: spacing.sm + 2, gap: 1 }}>
+              <Text numberOfLines={1} style={[typography.hand, { color: colors.inkBlue, fontSize: 22, lineHeight: 24 }]}>{name || 'Me'}, </Text>
+              <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: withAlpha(colors.ink, 0.3) }} />
+              <Text numberOfLines={1} style={[typography.hand, { color: colors.inkBlue, fontSize: 15, lineHeight: 18 }]}>to open on {formatDisplayDate(today).replace(/,? \d{4}$/, '')} </Text>
+              <View style={{ height: StyleSheet.hairlineWidth * 2, backgroundColor: withAlpha(colors.ink, 0.3) }} />
+              <Text numberOfLines={1} style={[typography.stamp, { color: colors.sepia, fontSize: 7, lineHeight: 11, letterSpacing: 1.4, paddingRight: 0, marginTop: 2 }]}>FROM ME · {year}</Text>
+            </View>
+            {/* Postage stamp with the year (perforated edge), and today's postmark struck across it. */}
             <View
               style={{
                 position: 'absolute',
@@ -381,44 +399,86 @@ function Letter({ entry, today, width, onOpen, first, perch = true, label = true
                 backgroundColor: colors.paperWhite,
                 borderWidth: 2,
                 borderStyle: 'dashed',
-                borderColor: palette.primary,
+                borderColor: colors.sepia,
                 alignItems: 'center',
                 justifyContent: 'center',
                 transform: [{ rotate: deg(stampTilt) }],
               }}
             >
-              <Text style={[typography.stamp, { color: palette.primary, paddingRight: 0, letterSpacing: 0 }]}>{year}</Text>
+              <Text style={[typography.stampLarge, { color: colors.sepia, paddingRight: 0, letterSpacing: 0, fontSize: 15 }]}>{year}</Text>
             </View>
+            {/* Wavy cancellation lines struck across the stamp. */}
+            <Svg pointerEvents="none" width={STAMP * 1.9} height={STAMP * 0.7} style={{ position: 'absolute', right: spacing.md - STAMP * 0.2, bottom: spacing.md + STAMP * 0.3 }}>
+              {[0.2, 0.45, 0.7].map((y) => (
+                <Path
+                  key={y}
+                  d={`M 0 ${STAMP * 0.7 * y} q ${STAMP * 0.24} -5 ${STAMP * 0.48} 0 t ${STAMP * 0.48} 0 t ${STAMP * 0.48} 0 t ${STAMP * 0.48} 0`}
+                  stroke={withAlpha(colors.inkBlue, 0.5)}
+                  strokeWidth={1.2}
+                  fill="none"
+                />
+              ))}
+            </Svg>
+            <View
+              style={{
+                position: 'absolute',
+                // Struck just left of the stamp, its ring catching the stamp's edge (above it, so the date reads whole).
+                right: spacing.md + STAMP * 0.82,
+                bottom: spacing.md + STAMP * 0.32,
+                zIndex: 2,
+                width: POSTMARK,
+                height: POSTMARK,
+                borderRadius: POSTMARK / 2,
+                borderWidth: 1.2,
+                borderColor: withAlpha(colors.inkBlue, 0.55),
+                alignItems: 'center',
+                justifyContent: 'center',
+                transform: [{ rotate: deg(postmarkTilt) }],
+              }}
+            >
+              <Text numberOfLines={1} style={[typography.stamp, { color: withAlpha(colors.inkBlue, 0.6), fontSize: 8, lineHeight: 10, letterSpacing: 0.6, paddingRight: 0 }]}>
+                {formatDisplayDate(today).replace(/,? \d{4}$/, '').toUpperCase()}
+              </Text>
+            </View>
+            {/* The airmail border along the front's sides and foot. */}
+            <View style={[styles.edgeH, { bottom: 0, backgroundImage: AIRMAIL_STRIPES }]} />
+            <View style={[styles.edgeV, { left: 0, backgroundImage: AIRMAIL_STRIPES }]} />
+            <View style={[styles.edgeV, { right: 0, backgroundImage: AIRMAIL_STRIPES }]} />
           </View>
           {/* Upper part of the front, shown only while sealed. */}
           <Animated.View
             pointerEvents="none"
-            style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: height * 0.42 + 1, backgroundColor: palette.tint, borderTopLeftRadius: CORNER, borderTopRightRadius: CORNER }, closedOnly]}
-          />
+            style={[{ position: 'absolute', top: 0, left: 0, right: 0, height: height * 0.42 + 1, backgroundColor: paper, borderTopLeftRadius: CORNER, borderTopRightRadius: CORNER, overflow: 'hidden' }, closedOnly]}
+          >
+            <View style={[styles.edgeH, { top: 0, backgroundImage: AIRMAIL_STRIPES }]} />
+            <View style={[styles.edgeV, { left: 0, backgroundImage: AIRMAIL_STRIPES }]} />
+            <View style={[styles.edgeV, { right: 0, backgroundImage: AIRMAIL_STRIPES }]} />
+          </Animated.View>
 
-          {/* Sealed flap with a sticker holding it shut. */}
+          {/* The flap, tucked shut, its edge striped red and blue like the rest of the airmail border. */}
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: 0, width, height: flapH, transformOrigin: 'top' }, closedFlap]}>
             <Svg width={width} height={flapH}>
-              <Path d={flapPath} fill={colors.paperWhite} stroke={palette.primary} strokeWidth={1.5} strokeLinejoin="round" />
+              <Path d={flapPath} fill={paper} stroke={line} strokeWidth={1} strokeLinejoin="round" />
+              <Path d={flapPath} fill="none" stroke={AIRMAIL_RED} strokeWidth={4} strokeDasharray="8 8" strokeLinejoin="round" opacity={0.9} />
+              <Path d={flapPath} fill="none" stroke={AIRMAIL_BLUE} strokeWidth={4} strokeDasharray="8 8" strokeDashoffset={8} strokeLinejoin="round" opacity={0.9} />
             </Svg>
-          </Animated.View>
-          <Animated.View pointerEvents="none" style={[{ position: 'absolute', top: flapH - SEAL * 0.6, left: (width - SEAL) / 2 }, closedOnly]}>
-            <Sticker kind={seal} size={SEAL} color={palette.primary} color2={palette.secondary} />
           </Animated.View>
 
           {/* Paper shadow under the whole envelope. */}
-          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: -1, borderRadius: CORNER, boxShadow: theme.shadow(palette.primary, 1.2) }]} />
+          <View pointerEvents="none" style={[StyleSheet.absoluteFill, { zIndex: -1, borderRadius: CORNER, boxShadow: theme.shadow(undefined, 1.2) }]} />
         </View>
       </View>
       </Raster>
       {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
-      {label ? <Text style={[typography.handLarge, { color: colors.onDesk, textAlign: 'center' }]}>{yearsAgoLabel(yearsBetween(entry.localDate, today))}</Text> : null}
+      {label ? <Text style={[typography.headline, { color: colors.giltBright, textAlign: 'center', alignSelf: 'stretch' }]}>{yearsAgoLabel(yearsBetween(entry.localDate, today))}</Text> : null}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
   center: { alignItems: 'center' },
+  edgeH: { position: 'absolute', left: 0, right: 0, height: AIRMAIL_EDGE },
+  edgeV: { position: 'absolute', top: 0, bottom: 0, width: AIRMAIL_EDGE },
   perch: { flexDirection: 'row', alignItems: 'flex-end' },
   stamps: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
 });

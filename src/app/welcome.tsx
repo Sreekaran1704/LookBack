@@ -6,12 +6,12 @@ import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { stepIn, stepOut } from '../components/transitions';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { PillButton } from '../components/Buttons';
-import { ActionBar } from '../components/Screen';
-import { PaperPicker, SlidingToggle } from '../components/Pickers';
-import { Buddy, type BuddyMood } from '../components/scrapbook/Buddy';
-import { Confetti } from '../components/scrapbook/Confetti';
+import { ActionBar, type BarAction } from '../components/Screen';
+import { SlideSwitch } from '../components/Hardware';
+import { PaperPicker } from '../components/Pickers';
+import { Buddy } from '../components/scrapbook/Buddy';
 import { PaperBackground } from '../components/scrapbook/PaperBackground';
-import { backupRepository, DEFAULT_REMINDER, settingsRepository, type BackupStatus } from '../data';
+import { accountRepository, backupRepository, DEFAULT_REMINDER, settingsRepository, type BackupStatus } from '../data';
 import { useProfile, useReminderSettings, useToday } from '../hooks/useData';
 import { parseLocalDate } from '../lib/dates';
 import { successHaptic } from '../lib/haptics';
@@ -19,24 +19,21 @@ import { requestPermission } from '../notifications/scheduler';
 import { useLook, useTheme, type PaperTone } from '../theme';
 
 const STEPS = ['hello', 'name', 'paper', 'reminder', 'backup', 'done'] as const;
-type Step = (typeof STEPS)[number];
 
 const TONES = [
-  { value: 'light', label: 'Light', icon: 'sunny-outline' },
-  { value: 'dark', label: 'Dark', icon: 'moon-outline' },
+  { value: 'light', label: 'Day', icon: 'sunny-outline' },
+  { value: 'dark', label: 'Night', icon: 'moon-outline' },
 ] as const;
-
-const MOODS: Record<Step, BuddyMood> = { hello: 'wave', name: 'happy', paper: 'peek', reminder: 'happy', backup: 'happy', done: 'cheer' };
 
 function formatTime(hour: number, minute: number): string {
   return new Date(2000, 0, 1, hour, minute).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
 }
 
 /**
- * First run (and "Meet the bunny again" in Settings): the bunny introduces itself and asks a few
- * things, one page at a time: your name, your paper and light or dark (the whole app changes as you
- * pick), when letters from the past should arrive, and whether to keep a copy in Google Drive. Each
- * answer is saved as soon as it's given, so leaving halfway keeps what was chosen.
+ * First run (and "Read the first page again" in Settings): the diary's first pages, one at a time, under its stamp:
+ * what the diary is for, whose it is (your name), its paper and day or lamplight (the whole app changes as you
+ * pick), when letters from the past should arrive, and whether to keep a copy in Google Drive. Each answer is saved
+ * as soon as it's given, so leaving halfway keeps what was chosen.
  */
 export default function WelcomeScreen() {
   const theme = useTheme();
@@ -65,9 +62,22 @@ export default function WelcomeScreen() {
     else router.back();
   };
 
+  const who = name.trim();
+  // The step's main button lives in the bar, so it is always on screen (never under the keyboard or below the fold).
+  const onward: BarAction | null =
+    current === 'hello'
+      ? { key: 'begin', icon: 'arrow-forward', label: 'Begin', primary: colors.gilt, onPress: next }
+      : current === 'name'
+        ? { key: 'name', icon: 'arrow-forward', label: who ? `${who}'s diary` : 'Skip', primary: who ? colors.gilt : undefined, onPress: next }
+        : current === 'paper'
+          ? { key: 'paper', icon: 'arrow-forward', label: 'This one', primary: colors.gilt, onPress: next }
+          : null;
+  const barActions: BarAction[] = [
+    ...(step > 0 && current !== 'done' ? [{ key: 'back', icon: 'chevron-back' as const, label: 'Back', onPress: back }] : []),
+    ...(onward ? [onward] : []),
+  ];
   const entering = stepIn(reduceMotion);
   const exiting = stepOut(reduceMotion);
-  const who = name.trim();
 
   return (
     <View style={{ flex: 1 }}>
@@ -75,12 +85,10 @@ export default function WelcomeScreen() {
       <KeyboardAvoidingView style={{ flex: 1 }} behavior="padding">
         <View style={[styles.top, { paddingTop: insets.top + spacing.md, paddingHorizontal: spacing.gutter, gap: spacing.md }]}>
           <View style={{ width: sizes.circleButton }} />
-          {/* Progress: a row of little hearts, filled as you go. */}
-          <View style={[styles.row, { flex: 1, justifyContent: 'center', gap: spacing.xs }]} accessibilityLabel={`Step ${step + 1} of ${STEPS.length}`}>
+          {/* Progress: a row of small gilt diamonds, filled as you go. */}
+          <View style={[styles.row, { flex: 1, justifyContent: 'center', gap: spacing.md }]} accessibilityLabel={`Step ${step + 1} of ${STEPS.length}`}>
             {STEPS.map((s, i) => (
-              <Text key={s} style={[typography.hand, { color: i <= step ? palette.primary : colors.onDeskFaint, paddingRight: 0 }]}>
-                {i <= step ? '♥' : '♡'}
-              </Text>
+              <View key={s} style={{ width: 9, height: 9, transform: [{ rotate: '45deg' }], borderWidth: 1, borderColor: colors.gilt, backgroundColor: i <= step ? colors.gilt : 'transparent' }} />
             ))}
           </View>
           <View style={{ width: sizes.circleButton }} />
@@ -89,21 +97,20 @@ export default function WelcomeScreen() {
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, padding: spacing.gutter, paddingBottom: insets.bottom + spacing.xl }}>
           <Animated.View key={current} entering={entering} exiting={exiting} style={{ flex: 1, gap: spacing.xl }}>
             <View style={{ alignItems: 'center' }}>
-              <Buddy mood={MOODS[current]} accent={palette.primary} size={current === 'hello' || current === 'done' ? sizes.buddy * 1.8 : sizes.buddy * 1.2} bump={step} />
+              <Buddy size={current === 'hello' || current === 'done' ? sizes.buddy * 1.4 : sizes.buddy * 0.8} bump={step} />
             </View>
 
             {current === 'hello' ? (
               <Page
-                title={'Hi! I\'m Bun.'}
-                body="Every day, tell me one small thing: a note, a quote or a photo. On the same day next year, I'll bring it back to you as a letter."
+                title="This is your diary"
+                body="Write down what's weighing on you, or say it out loud onto a tape. A year from today it comes back to you, so you can see how it feels now."
               >
-                <PillButton label="Nice to meet you!" icon="heart" tone="dark" large onPress={next} />
               </Page>
             ) : null}
 
             {current === 'name' ? (
-              <Page title="What should I call you?" body="Just a first name is lovely. You can skip this.">
-                <View style={[styles.note, { backgroundColor: colors.paperWhite, borderRadius: theme.radii.paper, padding: spacing.lg, boxShadow: theme.shadow(palette.primary, 1) }]}>
+              <Page title="Whose diary is this?" body="A first name, for the cover. You can skip this.">
+                <View style={{ backgroundColor: colors.paper, borderRadius: 3, padding: spacing.lg, boxShadow: theme.shadow(undefined, 1) }}>
                   <TextInput
                     value={name}
                     onChangeText={setName}
@@ -113,11 +120,10 @@ export default function WelcomeScreen() {
                     returnKeyType="next"
                     onSubmitEditing={next}
                     maxLength={24}
-                    style={[typography.headline, { color: colors.ink, textAlign: 'center' }]}
+                    style={[typography.handLarge, { color: colors.inkBlue, textAlign: 'center' }]}
                     accessibilityLabel="Your name"
                   />
                 </View>
-                <PillButton label={who ? `Hi, ${who}!` : 'Skip'} icon="arrow-forward" tone={who ? 'dark' : 'paper'} large onPress={next} />
               </Page>
             ) : null}
 
@@ -126,27 +132,26 @@ export default function WelcomeScreen() {
             {current === 'backup' ? <BackupStep onNext={next} /> : null}
 
             {current === 'done' ? (
-              <Page title={who ? `All set, ${who}!` : 'All set!'} body="Your notebook is ready. What's one small thing from today?">
+              <Page title={who ? `Ready, ${who}` : 'Ready'} body="Your diary is ready. What's weighing on you today?">
                 <PillButton label="Write today's page" icon="create-outline" tone="dark" large onPress={() => finish(true)} />
                 <PillButton label="Look around first" icon="home-outline" large onPress={() => finish(false)} />
               </Page>
             ) : null}
           </Animated.View>
         </ScrollView>
-        {/* Back, at the foot where a thumb reaches it. */}
-        {step > 0 && current !== 'done' ? <ActionBar withNavBar={false} actions={[{ key: 'back', icon: 'chevron-back', label: 'Back', tint: palette.primary, onPress: back }]} /> : null}
+        {/* Back and the step's own way on, at the foot where a thumb reaches them, riding up with the keyboard. */}
+        {barActions.length > 0 ? <ActionBar withNavBar={false} actions={barActions} /> : null}
       </KeyboardAvoidingView>
-      {current === 'done' ? <Confetti colors={[palette.primary, palette.secondary, colors.amber, colors.green]} burstKey={step} /> : null}
     </View>
   );
 }
 
-function Page({ title, body, children }: { title: string; body: string; children: ReactNode }) {
+function Page({ title, body, children }: { title: string; body: string; children?: ReactNode }) {
   const { colors, spacing, typography } = useTheme();
   return (
     <View style={{ gap: spacing.lg }}>
-      <Text style={[typography.title, { color: colors.onDesk, textAlign: 'center' }]}>{title}</Text>
-      <Text style={[typography.body, { color: colors.onDeskMuted, textAlign: 'center' }]}>{body}</Text>
+      <Text style={[typography.title, { color: colors.giltBright, textAlign: 'center' }]}>{title}</Text>
+      <Text style={[typography.printItalic, { color: colors.onDeskMuted, textAlign: 'center', fontSize: 19, lineHeight: 27 }]}>{body}</Text>
       <View style={{ gap: spacing.md, marginTop: spacing.md }}>{children}</View>
     </View>
   );
@@ -157,12 +162,11 @@ function PaperStep({ onNext, name, accent }: { onNext: () => void; name: string;
   const { spacing, radii, colors } = theme;
   const { look, setLook } = useLook();
   return (
-    <Page title="Pick your paper" body={`${name ? `${name}, this` : 'This'} is the page every memory is stuck onto. Dark is the same paper by lamplight.`}>
+    <Page title="Choose your paper" body={`${name ? `${name}, pick` : 'Pick'} the paper your diary is written on. Lamplight is the same paper at night.`}>
       <View style={{ backgroundColor: colors.panel, borderRadius: radii.panel, padding: spacing.lg, gap: spacing.lg, boxShadow: theme.shadow(undefined, 1) }}>
         <PaperPicker value={look.paper} tone={look.tone} onChange={(paper) => setLook({ ...look, paper })} />
-        <SlidingToggle<PaperTone> options={TONES} value={look.tone} onChange={(tone) => setLook({ ...look, tone })} accent={accent} />
+        <SlideSwitch<PaperTone> options={TONES} value={look.tone} onChange={(tone) => setLook({ ...look, tone })} />
       </View>
-      <PillButton label="Looks lovely" icon="arrow-forward" tone="dark" large onPress={onNext} />
     </Page>
   );
 }
@@ -187,7 +191,7 @@ function ReminderStep({ onNext }: { onNext: () => void }) {
   };
 
   return (
-    <Page title="Letters from the past" body="On days when you have a memory from an earlier year, I'll send you a little letter. When should it arrive?">
+    <Page title="Letters from the past" body="On days when a page from an earlier year comes back, the diary sends you a quiet letter. When should it arrive?">
       <View style={[styles.center, { backgroundColor: colors.panel, borderRadius: radii.panel, padding: spacing.lg, boxShadow: theme.shadow(undefined, 1) }]}>
         {Platform.OS === 'ios' ? (
           <DateTimePicker value={pickerValue} mode="time" display="spinner" onValueChange={(_, d) => setTime(d)} />
@@ -222,7 +226,7 @@ function BackupStep({ onNext }: { onNext: () => void }) {
   const connect = async () => {
     setBusy(true);
     try {
-      if (await backupRepository.connect()) {
+      if (await accountRepository.connect()) {
         await backupRepository.syncNow();
         successHaptic();
         onNext();
@@ -236,13 +240,13 @@ function BackupStep({ onNext }: { onNext: () => void }) {
   if (status?.account) {
     return (
       <Page title="Your copy is safe" body={`Backing up to ${status.account}.`}>
-        <PillButton label="Lovely" icon="arrow-forward" tone="dark" large onPress={onNext} />
+        <PillButton label="Go on" icon="arrow-forward" tone="dark" large onPress={onNext} />
       </Page>
     );
   }
   return (
-    <Page title="Keep a copy?" body={`Your memories live on this phone. I can also keep a private copy in your own Google Drive, in a "${status?.folder ?? 'LookBack'}" folder only you can see.`}>
-      {status?.available ? <PillButton label={busy ? 'Connecting…' : 'Connect Google Drive'} icon="logo-google" tone="dark" large onPress={connect} disabled={busy} /> : null}
+    <Page title="Keep a copy?" body={`Your diary lives on this phone. Connect Google to keep a private copy in your own Drive (a "${status?.folder ?? 'LookBack'}" folder only you can see) and to let people you trust give you pages.`}>
+      {status?.available ? <PillButton label={busy ? 'Connecting…' : 'Connect Google'} icon="logo-google" tone="dark" large onPress={connect} disabled={busy} /> : null}
       <PillButton label="Maybe later" large onPress={onNext} />
     </Page>
   );
@@ -252,5 +256,4 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center' },
   row: { flexDirection: 'row', alignItems: 'center' },
   center: { alignItems: 'center' },
-  note: { transform: [{ rotate: '-1deg' }] },
 });

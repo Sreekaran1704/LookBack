@@ -1,7 +1,7 @@
 /**
- * The page colors a person can choose for their notebook, each in a light and a dark tone. Dark is the
- * same paper by lamplight (a deep shade of the same color), not black. Paper objects (notes, polaroids,
- * panels) stay light on either tone. Pure module (no React Native imports) so it can be unit-tested.
+ * The diary's paper: the color a person chooses (cream, peach, rose, lemon, mint, sky, lavender), by day and by
+ * lamplight (night: a deep shade of the same color, not black). `dots` is the paper's own accent, `accent2` a partner
+ * color. Pure module (no React Native imports).
  */
 import { mixHex, withAlpha } from './yearColors';
 
@@ -23,14 +23,18 @@ export interface Paper {
 }
 
 export const PAPERS: readonly Paper[] = [
-  { name: 'cream', label: 'Cream', light: '#FBF5E6', lightDeep: '#ECE2CA', dark: '#2A251E', darkDeep: '#1B1814', dots: '#5B8CC9', accent2: '#E8A23B' },
-  { name: 'peach', label: 'Peach', light: '#FFE9E1', lightDeep: '#F6D3C6', dark: '#3B2722', darkDeep: '#261915', dots: '#F29A86', accent2: '#6FB59B' },
-  { name: 'rose', label: 'Rose', light: '#FCE4EC', lightDeep: '#F3CCDA', dark: '#3A2030', darkDeep: '#25141F', dots: '#E57BA2', accent2: '#9C7BD9' },
-  { name: 'lemon', label: 'Lemon', light: '#FBF3CC', lightDeep: '#F0E3A8', dark: '#35301A', darkDeep: '#221E10', dots: '#D9A521', accent2: '#6FA8DC' },
-  { name: 'mint', label: 'Mint', light: '#E2F5EA', lightDeep: '#C9EAD7', dark: '#1D3429', darkDeep: '#12221A', dots: '#3FAF7C', accent2: '#F29A86' },
-  { name: 'sky', label: 'Sky', light: '#E1EEFB', lightDeep: '#C8DDF4', dark: '#1C2B3E', darkDeep: '#111B28', dots: '#4D8DD6', accent2: '#F2B33D' },
-  { name: 'lavender', label: 'Lavender', light: '#ECE6FA', lightDeep: '#DAD0F3', dark: '#2A2440', darkDeep: '#1B172A', dots: '#8B6FD9', accent2: '#E57BA2' },
+  // Day: the paper itself, a clear color you can tell apart at a glance. Night: the same paper by lamplight, deep.
+  { name: 'cream', label: 'Cream', light: '#F4E7C9', lightDeep: '#E8D6AE', dark: '#2A2317', darkDeep: '#1D180F', dots: '#B8893E', accent2: '#B5452E' },
+  { name: 'peach', label: 'Peach', light: '#F8CDB0', lightDeep: '#EDB894', dark: '#3A2018', darkDeep: '#28150F', dots: '#D0663E', accent2: '#3E6E8E' },
+  { name: 'rose', label: 'Rose', light: '#F4C3CB', lightDeep: '#E8AAB5', dark: '#371A22', darkDeep: '#251117', dots: '#C24D6A', accent2: '#3D7A62' },
+  { name: 'lemon', label: 'Lemon', light: '#F6E3A0', lightDeep: '#ECD37C', dark: '#2F2912', darkDeep: '#201C0B', dots: '#B98E1E', accent2: '#4B5FA6' },
+  { name: 'mint', label: 'Mint', light: '#C4E7D0', lightDeep: '#A9D9BA', dark: '#13291F', darkDeep: '#0C1C15', dots: '#3E8F67', accent2: '#C2553C' },
+  { name: 'sky', label: 'Sky', light: '#C0DAF2', lightDeep: '#A3C6E8', dark: '#122337', darkDeep: '#0B1726', dots: '#3D78B3', accent2: '#D0663E' },
+  { name: 'lavender', label: 'Lavender', light: '#D8CBF0', lightDeep: '#C4B2E6', dark: '#221B35', darkDeep: '#171224', dots: '#7357B5', accent2: '#C9A23A' },
 ];
+
+/** Looks saved before the papers came back named a leather: each becomes the nearest paper. */
+const OLD_NAMES: Record<string, string> = { green: 'mint', oxblood: 'rose', navy: 'sky', chestnut: 'peach', black: 'cream' };
 
 export const DEFAULT_PAPER = 'cream';
 
@@ -51,8 +55,9 @@ export function parseLook(raw: string | null | undefined): Look {
   if (raw === 'dark' || raw === 'light') return { paper: DEFAULT_PAPER, tone: raw };
   try {
     const value = JSON.parse(raw) as Partial<Look>;
+    const name = typeof value.paper === 'string' ? (OLD_NAMES[value.paper] ?? value.paper) : undefined;
     return {
-      paper: PAPERS.some((p) => p.name === value.paper) ? (value.paper as string) : DEFAULT_PAPER,
+      paper: PAPERS.some((p) => p.name === name) ? (name as string) : DEFAULT_PAPER,
       tone: value.tone === 'dark' ? 'dark' : 'light',
     };
   } catch {
@@ -60,59 +65,68 @@ export function parseLook(raw: string | null | undefined): Look {
   }
 }
 
-/** Colors for the bottom bar, picked to sit on this paper in this tone (instead of a fixed cream strip). */
+/**
+ * Colors for the bottom bar and the action bars: the front edge of a walnut writing table at the foot of the screen (lit
+ * oak by day, walnut at night) with ivory keys (dark bakelite at night) set in brass, engraved legends and an amber LED.
+ */
 export interface NavColors {
+  /** The key panels (and the action bars): ivory by day, bakelite at night. */
   strip: string;
   edge: string;
   stitch: string;
   shadow: string;
+  /** Legends on the keys. */
   ink: string;
   inkMuted: string;
-  /** Soft pill behind the page you're on. */
+  /** The lit LED under the page you're on. */
   active: string;
   tape: string;
   tape2: string;
-  /** The + sticker (before today is written) and its white rim. */
+  /** The write button's accent, and a key's face. */
   plus: string;
   rim: string;
+  /** The desk: its wood, a darker shade for the grain and front, a lighter one for the lit top edge. */
+  wood: string;
+  woodDark: string;
+  woodLight: string;
+  /** Brass bezels and plates. */
+  brass: string;
+  brassDark: string;
 }
 
-const INK = '#2A2118';
-const INK_MUTED = '#7A6A58';
-const WHITE = '#FFFFFF';
+const IVORY = '#F1E8D4';
+const BAKELITE = '#2A2420';
+const ENGRAVED_DAY = '#2A2118';
+const ENGRAVED_NIGHT = '#F0E4CC';
+const LED = '#F0A23C';
+const OAK = '#4E2F18';
+const WALNUT = '#2C1A0D';
+const BRASS = '#C9A04A';
+const BRASS_DARK = '#7E5F22';
 const BLACK = '#000000';
+const WHITE = '#FFFFFF';
 
-/**
- * The bar is a strip of the same paper: a brighter sheet of it in the light tone, a lamp-lit sheet
- * (the dark paper warmed with its own accent) in the dark tone, with the paper's two accents as tape.
- */
+/** The desk is the same wood on every paper; the keys take a whisper of the paper's accent. */
 export function navColors(paper: Paper, tone: PaperTone): NavColors {
-  if (tone === 'light') {
-    return {
-      strip: mixHex(paper.light, WHITE, 0.55),
-      edge: withAlpha(paper.dots, 0.35),
-      stitch: withAlpha(paper.dots, 0.6),
-      shadow: withAlpha(paper.darkDeep, 0.2),
-      ink: INK,
-      inkMuted: mixHex(INK_MUTED, paper.dots, 0.2),
-      active: withAlpha(paper.dots, 0.24),
-      tape: paper.dots,
-      tape2: paper.accent2,
-      plus: paper.dots,
-      rim: '#FFFDF8',
-    };
-  }
+  const day = tone === 'light';
+  const key = day ? mixHex(IVORY, paper.dots, 0.06) : mixHex(BAKELITE, paper.dark, 0.3);
+  const wood = day ? OAK : WALNUT;
   return {
-    strip: mixHex(paper.dark, paper.dots, 0.2),
-    edge: withAlpha(paper.dots, 0.45),
-    stitch: withAlpha(mixHex(paper.dots, WHITE, 0.25), 0.7),
-    shadow: withAlpha(BLACK, 0.55),
-    ink: mixHex(paper.light, WHITE, 0.3),
-    inkMuted: withAlpha(paper.light, 0.62),
-    active: withAlpha(paper.dots, 0.4),
-    tape: mixHex(paper.dots, paper.dark, 0.15),
-    tape2: mixHex(paper.accent2, paper.dark, 0.2),
-    plus: paper.dots,
-    rim: mixHex(paper.light, paper.dark, 0.08),
+    strip: key,
+    edge: day ? withAlpha(BLACK, 0.2) : withAlpha(WHITE, 0.08),
+    stitch: day ? withAlpha(BLACK, 0.12) : withAlpha(WHITE, 0.08),
+    shadow: withAlpha(BLACK, day ? 0.3 : 0.6),
+    ink: day ? ENGRAVED_DAY : ENGRAVED_NIGHT,
+    inkMuted: day ? mixHex(ENGRAVED_DAY, IVORY, 0.4) : mixHex(ENGRAVED_NIGHT, BAKELITE, 0.35),
+    active: LED,
+    tape: paper.dots,
+    tape2: paper.accent2,
+    plus: paper.accent2,
+    rim: day ? mixHex(key, WHITE, 0.45) : mixHex(key, WHITE, 0.08),
+    wood,
+    woodDark: mixHex(wood, BLACK, day ? 0.35 : 0.45),
+    woodLight: mixHex(wood, WHITE, day ? 0.3 : 0.15),
+    brass: BRASS,
+    brassDark: BRASS_DARK,
   };
 }

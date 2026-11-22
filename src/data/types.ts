@@ -28,6 +28,11 @@ export interface Entry {
   voicePath: string | null;
   voiceWave: number[] | null;
   voiceMs: number | null;
+  /** What you wrote back to your past self when this memory came back (sepia, under the original), and when. */
+  /** Optional handwritten cassette label; older entries have none. */
+  voiceTitle?: string | null;
+  reply: string | null;
+  repliedAt: string | null;
 }
 
 export interface EntryStyle {

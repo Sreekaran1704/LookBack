@@ -4,6 +4,7 @@ import { PixelRatio, StyleSheet, View, type LayoutChangeEvent, type StyleProp, t
 import { mulberry32 } from '../../lib/seeded';
 import { mixHex } from '../../theme/yearColors';
 import { useTheme } from '../../theme';
+import { Texture } from './Texture';
 
 export type PaperVariant = 'grid' | 'dots' | 'lined' | 'kraft' | 'cork' | 'plain';
 
@@ -11,9 +12,9 @@ interface Props {
   variant?: PaperVariant;
   /** Base color override (e.g. a year tint). */
   color?: string;
-  /** Screen background: a sheet of paper. Cream in light mode, black paper in dark mode. */
+  /** Screen background: the chosen paper (by day or lamplight), plain, lit from the top left. */
   desk?: boolean;
-  /** For a `desk` page in light mode: a year color to wash the paper with (the same look as inside a diary). */
+  /** For a `desk` page: a year color to tint the paper with (inside a year's diary). */
   wash?: string;
   style?: StyleProp<ViewStyle>;
 }
@@ -28,20 +29,16 @@ const GRAIN_BOOST_BLACK = 2.6;
 const MOTTLE_FREQ = 0.012;
 const MOTTLE_STRENGTH = 0.55;
 const EDGE_SHADE = '#000000';
-/** Every screen is a page of the same notebook: a red margin line runs down the left edge. */
-const MARGIN_X = 11;
-const MARGIN_W = 1.2;
-/** Paper fibres: short faint strands in the sheet, one per this many square points. */
-const FIBRE_AREA = 900;
-const FIBRE_ALPHA = 0.07;
 /** Printed dots aren't all the same: some take a little less ink, and none sit exactly on the grid. */
 const DOT_JITTER = 0.35;
 const FAINT_DOT_SHARE = 0.3;
-/** Light falls from the top left, and the page curves into the binding on the left. */
-const LIGHT_ALPHA = 0.16;
-const SHADE_ALPHA = 0.07;
-const GUTTER_W = 26;
-const GUTTER_ALPHA = 0.1;
+/** The desk page: the chosen paper, plain, with light from the top left and a shade where it curves into the binding. */
+const DESK_SHEEN = 0.18;
+const DESK_VIGNETTE = 0.16;
+const BINDING_W = 26;
+const BINDING_SHADE = 0.16;
+/** How much of a year's color tints the page inside that year's diary. */
+const DESK_WASH = 0.22;
 
 /**
  * Each paper (color, pattern, tone, size) is painted once into an image and shared by every page that uses it.
@@ -87,7 +84,7 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
   };
   const { width, height } = size;
   const midnight = theme.dark && desk;
-  const washed = desk && !theme.dark && wash ? mixHex(colors.desk, wash, opacity.pageWash) : undefined;
+  const washed = desk && wash ? mixHex(colors.desk, wash, DESK_WASH) : undefined;
 
   const base =
     color ??
@@ -140,7 +137,7 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
     return path.detach();
   }, [variant, width, height]);
 
-  // The dots that took a little less ink, and the paper's fibres: drawn once per page size.
+  // The dots that took a little less ink: drawn once per page size.
   const faintDots = useMemo(() => {
     if (width === 0 || variant !== 'dots') return null;
     const rnd = mulberry32(17);
@@ -156,22 +153,6 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
     }
     return path.detach();
   }, [variant, width, height]);
-  const fibres = useMemo(() => {
-    if (width === 0 || !desk) return null;
-    const rnd = mulberry32(Math.round(width * 7 + height));
-    const path = Skia.PathBuilder.Make();
-    const count = Math.round((width * height) / FIBRE_AREA);
-    for (let i = 0; i < count; i++) {
-      const x = rnd() * width;
-      const y = rnd() * height;
-      const len = 3 + rnd() * 9;
-      const a = rnd() * Math.PI;
-      const bend = (rnd() - 0.5) * len * 0.6;
-      path.moveTo(x, y);
-      path.quadTo(x + Math.cos(a) * len * 0.5 - Math.sin(a) * bend, y + Math.sin(a) * len * 0.5 + Math.cos(a) * bend, x + Math.cos(a) * len, y + Math.sin(a) * len);
-    }
-    return path.detach();
-  }, [desk, width, height]);
 
   const patternIsFill = variant === 'dots' || variant === 'cork';
   const patternColor = variant === 'cork' ? colors.corkDark : variant === 'lined' ? colors.ruleLine : colors.gridLine;
@@ -179,12 +160,39 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
   const grainStrength = midnight ? opacity.grainDark : opacity.grainLight;
   const grainBoost = midnight ? GRAIN_BOOST_BLACK : GRAIN_BOOST_PAPER;
 
-  const key = [base, variant, desk, midnight, Math.round(width), Math.round(height), patternColor, grainColor, grainStrength, colors.marginLine].join('|');
+  const key = [base, variant, desk, midnight, Math.round(width), Math.round(height), patternColor, grainColor, grainStrength].join('|');
   const [painted, setPainted] = useState<{ key: string; image: SkImage } | null>(null);
   const cached = paperCache.get(key);
   const image = cached ?? (painted?.key === key ? painted.image : null);
 
-  const layers = width > 0 ? (
+  const deskPaper = desk && width > 0 ? (
+        <>
+          <Rect x={0} y={0} width={width} height={height} color={base} />
+          {/* Cloudy mottling: the sheet is not perfectly even. */}
+          <Rect x={0} y={0} width={width} height={height}>
+            <FractalNoise freqX={MOTTLE_FREQ} freqY={MOTTLE_FREQ} octaves={2} seed={3} />
+            <ColorMatrix matrix={grainMatrix(midnight ? '#000000' : colors.shadowBase, grainStrength * MOTTLE_STRENGTH)} />
+          </Rect>
+          {/* Fine grain. */}
+          <Rect x={0} y={0} width={width} height={height}>
+            <FractalNoise freqX={0.9} freqY={0.9} octaves={3} seed={7} />
+            <ColorMatrix matrix={grainMatrix(grainColor, grainStrength * grainBoost)} />
+          </Rect>
+          {/* Light falling from the top left, the edges a touch darker. */}
+          <Rect x={0} y={0} width={width} height={height}>
+            <RadialGradient c={vec(width * 0.25, height * 0.1)} r={Math.max(width, height) * 0.8} colors={[`#FFFFFF${alphaHex(midnight ? DESK_SHEEN * 0.3 : DESK_SHEEN)}`, '#FFFFFF00']} />
+          </Rect>
+          <Rect x={0} y={0} width={width} height={height}>
+            <RadialGradient c={vec(width / 2, height * 0.45)} r={Math.max(width, height) * 0.8} colors={[`${EDGE_SHADE}00`, `${EDGE_SHADE}00`, `${EDGE_SHADE}${alphaHex(midnight ? DESK_VIGNETTE * 2.5 : DESK_VIGNETTE)}`]} positions={[0, 0.55, 1]} />
+          </Rect>
+          {/* Where the page curves into the binding. */}
+          <Rect x={0} y={0} width={BINDING_W} height={height}>
+            <LinearGradient start={vec(0, 0)} end={vec(BINDING_W, 0)} colors={[`${EDGE_SHADE}${alphaHex(midnight ? BINDING_SHADE * 2 : BINDING_SHADE)}`, `${EDGE_SHADE}00`]} />
+          </Rect>
+        </>
+      ) : null;
+
+  const layers = desk ? deskPaper : width > 0 ? (
         <>
           <Rect x={0} y={0} width={width} height={height} color={base} />
 
@@ -194,15 +202,12 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
             <ColorMatrix matrix={grainMatrix(grainColor, grainStrength * MOTTLE_STRENGTH)} />
           </Rect>
 
-          {/* Fibres in the sheet. */}
-          {fibres ? <Path path={fibres} color={grainColor} style="stroke" strokeWidth={0.6} opacity={FIBRE_ALPHA * (midnight ? 1.4 : 1)} /> : null}
 
           {pattern ? (
             <Path path={pattern} color={patternColor} style={patternIsFill ? 'fill' : 'stroke'} strokeWidth={1} />
           ) : null}
           {faintDots ? <Path path={faintDots} color={patternColor} style="fill" opacity={0.55} /> : null}
 
-          {desk ? <Rect x={MARGIN_X} y={0} width={MARGIN_W} height={height} color={colors.marginLine} /> : null}
 
           {/* Fine paper grain. */}
           <Rect x={0} y={0} width={width} height={height}>
@@ -210,39 +215,6 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
             <ColorMatrix matrix={grainMatrix(grainColor, grainStrength * grainBoost)} />
           </Rect>
 
-          {/* Light from the top left: the sheet is a touch brighter there and a touch duskier in the far corner. */}
-          {desk ? (
-            <Rect x={0} y={0} width={width} height={height}>
-              <LinearGradient
-                start={vec(0, 0)}
-                end={vec(width, height)}
-                colors={[`#FFFFFF${alphaHex(midnight ? LIGHT_ALPHA * 0.25 : LIGHT_ALPHA)}`, '#FFFFFF00', `${EDGE_SHADE}00`, `${EDGE_SHADE}${alphaHex(midnight ? SHADE_ALPHA * 1.5 : SHADE_ALPHA)}`]}
-                positions={[0, 0.4, 0.6, 1]}
-              />
-            </Rect>
-          ) : null}
-          {/* The page curves down into the binding on the left: a soft shade along that edge. */}
-          {desk ? (
-            <Rect x={0} y={0} width={GUTTER_W} height={height}>
-              <LinearGradient
-                start={vec(0, 0)}
-                end={vec(GUTTER_W, 0)}
-                colors={[`${EDGE_SHADE}${alphaHex(midnight ? GUTTER_ALPHA * 2 : GUTTER_ALPHA)}`, `${EDGE_SHADE}00`]}
-              />
-            </Rect>
-          ) : null}
-
-          {/* Black paper gets darker towards the edges. */}
-          {midnight ? (
-            <Rect x={0} y={0} width={width} height={height}>
-              <RadialGradient
-                c={vec(width / 2, height * 0.45)}
-                r={Math.max(width, height) * 0.8}
-                colors={[`${EDGE_SHADE}00`, `${EDGE_SHADE}00`, `${EDGE_SHADE}${Math.round(opacity.vignette * 255).toString(16)}`]}
-                positions={[0, 0.55, 1]}
-              />
-            </Rect>
-          ) : null}
         </>
       ) : null;
 
@@ -278,6 +250,8 @@ export const PaperBackground = memo(function PaperBackground({ variant = 'grid',
           {image ? <SkiaImage image={image} x={0} y={0} width={width} height={height} fit="fill" /> : layers}
         </Canvas>
       ) : null}
+      {/* The sheet's fibres and specks. */}
+      {desk ? <Texture kind="paper" opacity={midnight ? 0.18 : 0.28} /> : null}
     </View>
   );
 });

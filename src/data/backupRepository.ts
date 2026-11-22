@@ -5,7 +5,6 @@ import {
   googleConfigured,
   refreshAccessToken,
   restoreGoogleAccount,
-  signOutOfGoogle,
 } from './backup/googleAuth';
 import { entriesRepository } from './entriesRepository';
 import { listPhotoNames, readPhotoBytes, writePhotoBytes } from './photoStore';
@@ -45,9 +44,6 @@ export interface BackupResult {
  */
 export interface BackupRepository {
   getStatus(): Promise<BackupStatus>;
-  /** Lets the person choose a Google account. Returns its email, or null if they backed out. */
-  connect(): Promise<string | null>;
-  disconnect(): Promise<void>;
   /** Two-way sync: brings down what the phone is missing, sends up what Drive is missing. */
   syncNow(): Promise<BackupResult>;
   /** Syncs quietly if connected and the last backup is older than a day. Never throws. */
@@ -128,16 +124,6 @@ function createBackupRepository(): BackupRepository {
       return { available: googleConfigured, account: info.account, lastBackupAt: info.lastBackupAt, folder: BACKUP_FOLDER };
     },
 
-    async connect() {
-      const account = await chooseGoogleAccount();
-      if (account) await settingsRepository.setBackup({ account, lastBackupAt: null });
-      return account;
-    },
-
-    async disconnect() {
-      await signOutOfGoogle();
-      await settingsRepository.setBackup({ account: null, lastBackupAt: null });
-    },
 
     syncNow,
 

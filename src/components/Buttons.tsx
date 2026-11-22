@@ -1,7 +1,9 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
 import type { ComponentProps } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
-import { useTheme } from '../theme';
+import { control, useTheme } from '../theme';
+import { Stitches, WashIn } from './PaperTabs';
+import { Texture } from './scrapbook/Texture';
 import { PressableScale } from './PressableScale';
 
 export type IconName = ComponentProps<typeof Ionicons>['name'];
@@ -65,40 +67,31 @@ interface PillButtonProps {
  */
 export function PillButton({ label, icon, tone = 'paper', large = false, onPress, disabled, accessibilityLabel, color, grow = false, outline = false }: PillButtonProps) {
   const theme = useTheme();
-  const { colors, sizes, spacing, radii, typography } = theme;
-  const palette = color
-    ? outline
-      ? { bg: colors.paperWhite, fg: color }
-      : { bg: color, fg: colors.paperWhite }
-    : {
-        paper: { bg: colors.control, fg: colors.ink },
-        dark: { bg: colors.primary, fg: colors.onPrimary },
-        amber: { bg: colors.amber, fg: colors.onAmber },
-        green: { bg: colors.green, fg: colors.onGreen },
-      }[tone];
-
+  const { colors, sizes, spacing, typography } = theme;
+  // The same stitched cream paper as the bar and every other control; what matters is marked with a highlighter wash.
+  const wash = color ? (outline ? null : color) : { paper: null, dark: colors.gilt, amber: colors.amber, green: colors.green }[tone];
+  const ink = color && outline ? color : colors.ink;
   const content = (
     <>
-      {icon ? <Ionicons name={icon} size={large ? sizes.icon : sizes.iconSmall + 2} color={palette.fg} /> : null}
-      {/* textBreakStrategy simple: Android's default strategy drops the last word of a shrink-wrapped Caveat label. */}
-      <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.label, { color: palette.fg, flexShrink: 0 }]}>
+      <Texture kind="paper" opacity={0.5} radius={control.radius} />
+      <Stitches />
+      {wash ? <WashIn color={wash} /> : null}
+      {icon ? <Ionicons name={icon} size={large ? sizes.icon - 2 : sizes.iconSmall + 1} color={ink} /> : null}
+      <Text numberOfLines={1} style={[typography.small, { color: ink, fontSize: large ? 16 : 15, lineHeight: large ? 20 : 19, fontWeight: '700', flexShrink: 0, paddingRight: 0 }]}>
         {label}
-        {/* A trailing space (as HAND_TAIL in Screen.tsx): Android clips Caveat's last letter at the text's edge. */}
-        {' '}
       </Text>
     </>
   );
   const style = [
     styles.pill,
     {
-      minHeight: large ? sizes.pillHeightLarge : sizes.pillHeight,
+      minHeight: control.height,
       paddingHorizontal: spacing.gutter,
       gap: spacing.sm,
-      borderRadius: radii.pill,
-      backgroundColor: palette.bg,
-      boxShadow: theme.shadow(color ?? (tone === 'paper' || tone === 'dark' ? undefined : palette.bg), 0.8),
+      borderRadius: control.radius,
+      backgroundColor: colors.panel,
+      boxShadow: theme.shadow(undefined, 0.8),
     },
-    color ? { borderWidth: outline ? 2 : 3, borderColor: outline ? color : colors.paperWhite, borderStyle: outline ? ('dashed' as const) : ('solid' as const) } : null,
     grow ? styles.grow : large ? styles.stretch : styles.hug,
   ];
 

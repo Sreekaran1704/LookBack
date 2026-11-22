@@ -2,7 +2,7 @@
   "expo": {
     "name": "LookBack",
     "slug": "yearbook",
-    "version": "1.2.0",
+    "version": "1.3.0",
     "orientation": "portrait",
     "icon": "./assets/icon.png",
     "userInterfaceStyle": "automatic",
@@ -16,7 +16,7 @@
     },
     "android": {
       "adaptiveIcon": {
-        "backgroundColor": "#FFE9E1",
+        "backgroundColor": "#0B0B0C",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
@@ -24,8 +24,11 @@
       "predictiveBackGestureEnabled": false,
       "allowBackup": false,
       "package": "com.yearbook.app",
-      "versionCode": 3,
-      "blockedPermissions": ["android.permission.SYSTEM_ALERT_WINDOW"]
+      "versionCode": 4,
+      "blockedPermissions": [
+        "android.permission.SYSTEM_ALERT_WINDOW"
+      ],
+      "googleServicesFile": "./google-services.json"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -48,7 +51,7 @@
         {
           "icon": "./assets/notification-icon.png",
           "largeIcon": "./assets/notification-large.png",
-          "color": "#FF6B5E",
+          "color": "#C9A45C",
           "sounds": [
             "./assets/sounds/chime.wav"
           ]
@@ -65,10 +68,10 @@
         {
           "image": "./assets/splash-icon.png",
           "imageWidth": 180,
-          "backgroundColor": "#FBF5E6",
+          "backgroundColor": "#0B0B0C",
           "dark": {
             "image": "./assets/splash-icon.png",
-            "backgroundColor": "#1B1A18"
+            "backgroundColor": "#0B0B0C"
           }
         }
       ],
@@ -80,7 +83,7 @@
             "ios": "./assets/icon-waiting.png",
             "android": {
               "foregroundImage": "./assets/android-icon-waiting-foreground.png",
-              "backgroundColor": "#FFE9E1",
+              "backgroundColor": "#0B0B0C",
               "monochromeImage": "./assets/android-icon-monochrome.png"
             }
           },
@@ -89,7 +92,7 @@
             "ios": "./assets/icon-missed.png",
             "android": {
               "foregroundImage": "./assets/android-icon-missed-foreground.png",
-              "backgroundColor": "#FFE9E1",
+              "backgroundColor": "#0B0B0C",
               "monochromeImage": "./assets/android-icon-monochrome.png"
             }
           },
@@ -98,7 +101,7 @@
             "ios": "./assets/icon-gone.png",
             "android": {
               "foregroundImage": "./assets/android-icon-gone-foreground.png",
-              "backgroundColor": "#FFE9E1",
+              "backgroundColor": "#0B0B0C",
               "monochromeImage": "./assets/android-icon-monochrome.png"
             }
           }
@@ -109,17 +112,19 @@
         {
           "fonts": [
             "./node_modules/@expo-google-fonts/caveat/700Bold/Caveat_700Bold.ttf",
-            "./node_modules/@expo-google-fonts/caveat/600SemiBold/Caveat_600SemiBold.ttf"
+            "./node_modules/@expo-google-fonts/caveat/600SemiBold/Caveat_600SemiBold.ttf",
+            "./node_modules/@expo-google-fonts/cormorant-garamond/600SemiBold/CormorantGaramond_600SemiBold.ttf",
+            "./node_modules/@expo-google-fonts/im-fell-english/400Regular_Italic/IMFellEnglish_400Regular_Italic.ttf"
           ],
           "widgets": [
             {
               "name": "Today",
               "label": "LookBack · today",
-              "description": "Today's page: add a memory in one tap, or see the one you saved.",
+              "description": "The diary's cassette: today on its label, cracking when days go unwritten, a postmark when a letter from the past arrives.",
               "minWidth": "250dp",
-              "minHeight": "110dp",
+              "minHeight": "150dp",
               "targetCellWidth": 4,
-              "targetCellHeight": 2,
+              "targetCellHeight": 3,
               "previewImage": "./assets/widget-preview.png",
               "updatePeriodMillis": 1800000,
               "resizeMode": "horizontal|vertical"
@@ -136,7 +141,21 @@
           "enableBackgroundRecording": false,
           "enableBackgroundPlayback": false
         }
-      ]
+      ],
+      "expo-secure-store",
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "LookBack uses the camera to scan the code on a friend's screen when they give you a memory.",
+          "microphonePermission": false,
+          "recordAudioAndroid": false,
+          "barcodeScannerEnabled": true
+        }
+      ],
+      "@config-plugins/react-native-webrtc",
+      "./plugins/withWebRtcKeepRules",
+      "./plugins/withGradleMemory",
+      "expo-sharing"
     ],
     "scheme": "yearbook",
     "experiments": {

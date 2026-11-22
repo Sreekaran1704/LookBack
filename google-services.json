@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "111901269953",
+    "project_id": "lookback-c3896",
+    "storage_bucket": "lookback-c3896.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:111901269953:android:08104be77a3e19b004d940",
+        "android_client_info": {
+          "package_name": "com.yearbook.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDHbii0hBLAJTz1lP-E25AKH6QzL5qMt1I"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

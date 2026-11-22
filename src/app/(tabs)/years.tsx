@@ -1,5 +1,7 @@
 import { memo } from 'react';
-import { ScrollView, View, useWindowDimensions } from 'react-native';
+import { View, useWindowDimensions } from 'react-native';
+import Animated from 'react-native-reanimated';
+import { useNavScroll } from '../../components/NavBar';
 import { PageFooter, PageHeader, usePageContentStyle } from '../../components/Screen';
 import { YearsCupboard } from '../../components/YearsCupboard';
 import { PaperBackground } from '../../components/scrapbook/PaperBackground';
@@ -12,6 +14,7 @@ function YearsScreen() {
   const theme = useTheme();
   const { spacing } = theme;
   const pageContent = usePageContentStyle();
+  const onScroll = useNavScroll();
   const { width } = useWindowDimensions();
   const today = useToday();
   const { data: entries = [] } = useAllEntries();
@@ -22,13 +25,13 @@ function YearsScreen() {
   return (
     <View style={{ flex: 1 }}>
       <PaperBackground variant="dots" desk />
-      <ScrollView contentContainerStyle={pageContent}>
+      <Animated.ScrollView contentContainerStyle={pageContent} onScroll={onScroll} scrollEventThrottle={16}>
         <PageHeader
           title="Years"
           count={years.length > 0 ? years.length : undefined}
           subtitle={
             oldest !== undefined
-              ? `${entries.length} ${entries.length === 1 ? 'memory' : 'memories'} since ${oldest}.\nTap a diary to open it.`
+              ? `${entries.length} ${entries.length === 1 ? 'memory' : 'memories'} since ${oldest}.\nOpen a year. Meet yourself again.`
               : 'Your diaries will stand here.'
           }
           accent={palette.secondary}
@@ -37,7 +40,7 @@ function YearsScreen() {
         />
         <YearsCupboard entries={entries} today={today} width={width - spacing.gutter * 2} />
         <PageFooter label="the bookshelf" />
-      </ScrollView>
+      </Animated.ScrollView>
     </View>
   );
 }

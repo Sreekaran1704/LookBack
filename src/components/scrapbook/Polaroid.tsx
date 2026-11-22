@@ -18,9 +18,12 @@ import { deg, vintageFilm } from './shared';
 import { formatVoiceMs } from '../../lib/voice';
 import { PlayButton, VoiceRow, Waveform, type VoicePlayer } from './Waveform';
 import { WritableText, type NoteEditor } from './WritableText';
+import { Texture } from './Texture';
 
 interface PolaroidProps {
   width: number;
+  /** Collage previews never turn over; avoid mounting their hidden text and celebration layers. */
+  frontOnly?: boolean;
   uri: string | null;
   /** The memory's words: on the bottom strip when they fit, else on the back with "P.T.O" on the front. */
   words?: string;
@@ -73,6 +76,7 @@ const HEARTS = [
 /** White instant-photo frame with a deep bottom strip of handwriting, and a back you can turn it over to. */
 export const Polaroid = memo(function Polaroid({
   width,
+  frontOnly = false,
   uri,
   words = '',
   date,
@@ -245,6 +249,7 @@ export const Polaroid = memo(function Polaroid({
           {/* The card: matte, a touch brighter where the light falls, with a thin darker edge for its thickness. */}
           {/* The card: matte, a touch brighter where the light falls, with a thin darker edge for its thickness.
               Native gradients (drawn on the GPU), not SVG: an SVG this size is painted on the CPU, ~20 ms each time. */}
+          {film ? <Texture kind="paper" opacity={0.35} radius={theme.radii.paper} /> : null}
           {film ? (
             <View
               pointerEvents="none"
@@ -262,7 +267,7 @@ export const Polaroid = memo(function Polaroid({
             {voice && voiceInPrint ? <SoundPrint size={photo} tint={tint} wave={voice.wave} ms={voice.ms} player={voice.player} /> : null}
             {uri ? (
               <View style={[{ width: photo, height: photo }, vintageFilm(theme)]}>
-                <Image source={{ uri }} recyclingKey={uri} cachePolicy="memory" style={{ width: photo, height: photo }} contentFit="cover" transition={motion.imageFadeMs} />
+                <Image source={{ uri }} recyclingKey={uri} cachePolicy="memory" style={{ width: photo, height: photo }} contentFit="cover" transition={theme.lite ? 0 : motion.imageFadeMs} />
               </View>
             ) : null}
             {uri && film ? (
@@ -270,6 +275,8 @@ export const Polaroid = memo(function Polaroid({
               // card (shade along its top and left, a hairline of light bottom and right). Native gradients, drawn on the GPU.
               <View pointerEvents="none" style={StyleSheet.absoluteFill}>
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(WARM, WARM_ALPHA) }]} />
+                {/* Film grain and the odd speck of dust on the print. */}
+                <Texture kind="paper" opacity={0.3} />
                 <View style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(FADE, FADE_ALPHA) }]} />
                 <View style={[StyleSheet.absoluteFill, { backgroundImage: `radial-gradient(circle farthest-corner at 50% 48%, ${withAlpha(FILM_EDGE, 0)} 55%, ${withAlpha(FILM_EDGE, VIGNETTE)} 100%)` }]} />
                 <View style={[StyleSheet.absoluteFill, { backgroundImage: `linear-gradient(135deg, ${withAlpha(FILM_LIGHT, 0)} 18%, ${withAlpha(FILM_LIGHT, SHEEN)} 32%, ${withAlpha(FILM_LIGHT, 0)} 46%)` }]} />
@@ -285,14 +292,14 @@ export const Polaroid = memo(function Polaroid({
           <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.ink, borderRadius: theme.radii.paper }, frontShade]} />
         </Animated.View>
         {/* Only the side facing you takes touches: the hidden one is still there (just see-through) and would catch them. */}
-        {hasBack ? (
+        {hasBack && !frontOnly ? (
           <Animated.View pointerEvents={showBack ? 'auto' : 'none'} style={[StyleSheet.absoluteFill, backStyle]}>
             {back}
           </Animated.View>
         ) : null}
       </Animated.View>
       {/* Hearts float up when it lands. */}
-      {hasBack && !reduceMotion
+      {hasBack && !frontOnly && !reduceMotion
         ? HEARTS.map((h, i) => <Heart key={i} progress={hearts} x={width * h.x} y={height * 0.12} rise={height * 0.28 * h.rise} size={fontSize * 0.9 * h.size} delay={h.delay / motion.flipHeartsMs} color={tint} />)
         : null}
     </View>
@@ -370,7 +377,7 @@ export const TapedPhoto = memo(function TapedPhoto({ width, uri, tint, corners =
       }}
     >
       <View style={vintageFilm(theme)}>
-        <Image source={{ uri }} recyclingKey={uri} cachePolicy="memory" style={{ width: inner, height }} contentFit="cover" transition={motion.imageFadeMs} />
+        <Image source={{ uri }} recyclingKey={uri} cachePolicy="memory" style={{ width: inner, height }} contentFit="cover" transition={theme.lite ? 0 : motion.imageFadeMs} />
       </View>
       {corners ? (
         <>

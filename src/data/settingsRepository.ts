@@ -11,6 +11,7 @@ const KEY_THEME = 'themeMode';
 const KEY_PROFILE = 'profile';
 const KEY_ONBOARDED = 'onboarded';
 const KEY_BACKUP = 'backup';
+const KEY_AUTO_ACCEPT = 'pagesArriveByThemselves';
 
 const NO_BACKUP: BackupInfo = { account: null, lastBackupAt: null };
 
@@ -30,6 +31,9 @@ export interface SettingsRepository {
   getOnboarded(): Promise<boolean>;
   setOnboarded(done: boolean): Promise<void>;
   getBackup(): Promise<BackupInfo>;
+  /** Whether pages from your people come in without asking (on unless turned off). */
+  getAutoAccept(): Promise<boolean>;
+  setAutoAccept(on: boolean): Promise<void>;
   setBackup(patch: Partial<BackupInfo>): Promise<BackupInfo>;
   subscribe(listener: () => void): () => void;
 }
@@ -124,6 +128,12 @@ function createSqliteSettingsRepository(): SettingsRepository {
       await write(KEY_ONBOARDED, done ? '1' : '0');
     },
     getBackup,
+    async getAutoAccept() {
+      return (await read(KEY_AUTO_ACCEPT)) !== '0';
+    },
+    async setAutoAccept(on) {
+      await write(KEY_AUTO_ACCEPT, on ? '1' : '0');
+    },
     async setBackup(patch) {
       const db = await getDb();
       const next = { ...(await getBackup()), ...patch };

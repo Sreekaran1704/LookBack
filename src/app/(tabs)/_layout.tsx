@@ -13,7 +13,8 @@ import { useTheme } from '../../theme';
 const PAGES = [
   { name: 'index', path: '/' },
   { name: 'years', path: '/years' },
-  { name: 'settings', path: '/settings' },
+  { name: 'shared', path: '/shared' },
+  { name: 'you', path: '/you' },
 ] as const;
 type PagePath = (typeof PAGES)[number]['path'];
 
@@ -31,7 +32,7 @@ function indexOfPath(pathname: string): number {
 }
 
 /**
- * Home, Years and Settings side by side in Android's own page swiper (ViewPager2, as Instagram's tabs use): the drag,
+ * Home, Years, Shared and You side by side in Android's own page swiper (ViewPager2, as Instagram's tabs use): the drag,
  * the fling and the snap all run natively, so the page stays glued to your thumb whatever JavaScript is doing. (A
  * hand-built slider, driven through the gesture and animation libraries, never felt as attached on Home.)
  *
@@ -54,7 +55,8 @@ export default function TabsLayout() {
       <TabList>
         <TabTrigger name="index" href="/" />
         <TabTrigger name="years" href="/years" />
-        <TabTrigger name="settings" href="/settings" />
+        <TabTrigger name="shared" href="/shared" />
+        <TabTrigger name="you" href="/you" />
       </TabList>
     ),
   });
@@ -74,6 +76,12 @@ export default function TabsLayout() {
     selectHaptic();
     router.navigate(target.path as PagePath);
   };
+
+  // Opened straight onto a page (a link, a notification): the pager starts there without scrolling, so put the bar's
+  // highlight there too.
+  useEffect(() => {
+    pagerPosition.set(shown.current);
+  }, []);
 
   // Lets a sideways gesture inside a page (the letter deck) hold the pages still.
   useEffect(() => {

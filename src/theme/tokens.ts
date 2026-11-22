@@ -7,32 +7,45 @@ import { withAlpha } from './yearColors';
  */
 
 const palette = {
-  cream: '#FBF5E6',
-  creamDim: '#ECE2CA',
+  /** Aged diary pages: the page, a deeper page edge, and the same by lamplight. */
+  page: '#EFE4CC',
+  pageDeep: '#E3D6B8',
+  pageLamp: '#DCCFB2',
+  pageLampDeep: '#CFC0A0',
+  pageBright: '#F6EEDB',
+  pageBrightLamp: '#E6DAC0',
+  /** Gold tooling on the leather, and the cream lettering beside it. */
+  gilt: '#C9A45C',
+  giltBright: '#D4B26A',
+  giltLamp: '#B8964F',
+  lettering: '#E9DDC0',
+  letteringMuted: 'rgba(233, 221, 192, 0.74)',
+  letteringFaint: 'rgba(233, 221, 192, 0.46)',
+  leatherInk: '#14201A',
+  wax: '#7A231C',
+  /** The person's own words are blue-black ink; replies to the past self are sepia. */
+  inkBlue: '#23304A',
+  sepia: '#6B2A22',
   kraft: '#D8B98C',
   kraftDim: '#C2A276',
   blush: '#F8DDD3',
   cork: '#C99A68',
   corkDark: '#8E6440',
-  paperWhite: '#FFFDF8',
-  paperWhiteDim: '#EFE8D8',
   ink: '#2A2118',
-  inkMuted: '#7A6A58',
+  inkMuted: '#6B5F50',
   inkFaint: 'rgba(42, 33, 24, 0.14)',
-  faint: '#B3A088',
   buddy: '#FFF3E4',
   buddyShade: '#E3C3A8',
   buddyBlush: '#FF9DB0',
   buddyEar: '#FFC4D0',
   buddyNose: '#F0879C',
   buddyOutline: '#A9876B',
-  gridLine: 'rgba(91, 140, 201, 0.16)',
-  ruleLine: 'rgba(91, 140, 201, 0.32)',
-  marginLine: 'rgba(232, 84, 84, 0.45)',
-  deskNight: '#1B1A18',
-  deskNightDeep: '#0F0E0D',
+  gridLine: 'rgba(201, 164, 92, 0.12)',
+  ruleLine: 'rgba(120, 95, 60, 0.3)',
+  marginLine: 'rgba(142, 42, 32, 0.45)',
+  leather: '#1F3A2E',
+  leatherDeep: '#17291F',
   lamp: '#FFB866',
-  moonCream: '#F4ECD8',
   amber: '#F5B23C',
   amberInk: '#3D2600',
   green: '#2DB86A',
@@ -100,18 +113,31 @@ export interface ColorTokens {
   grain: string;
   shadowBase: string;
   scrim: string;
+  /** Gold tooling on the leather (rules, outlines, the title), a brighter gilt for text, and the stitching. */
+  gilt: string;
+  giltBright: string;
+  stitch: string;
+  /** Wax seals and the ribbon bookmark. */
+  wax: string;
+  /** The person's own words (blue-black ink) and their replies to their past self (sepia). */
+  inkBlue: string;
+  sepia: string;
 }
 
+/**
+ * Day: the leather cover in daylight. Text on the leather is cream lettering and gilt; pages (panels, notes, every
+ * memory) are aged cream paper with dark ink. The desk color is replaced by the chosen leather in `makeTheme`.
+ */
 export const lightColors: ColorTokens = {
-  desk: palette.cream,
-  deskDeep: palette.creamDim,
-  panel: palette.paperWhite,
-  control: palette.paperWhite,
-  primary: palette.ink,
-  onPrimary: palette.paperWhite,
+  desk: palette.leather,
+  deskDeep: palette.leatherDeep,
+  panel: palette.page,
+  control: palette.page,
+  primary: palette.gilt,
+  onPrimary: palette.leatherInk,
   hairline: palette.inkFaint,
-  paper: palette.cream,
-  paperWhite: palette.paperWhite,
+  paper: palette.page,
+  paperWhite: palette.pageBright,
   kraft: palette.kraft,
   blush: palette.blush,
   cork: palette.cork,
@@ -122,9 +148,10 @@ export const lightColors: ColorTokens = {
   ink: palette.ink,
   inkMuted: palette.inkMuted,
   inkFaint: palette.inkFaint,
+  // By day the cover is pale, so lettering on it is dark ink.
   onDesk: palette.ink,
-  onDeskMuted: palette.inkMuted,
-  onDeskFaint: palette.faint,
+  onDeskMuted: 'rgba(42, 33, 24, 0.7)',
+  onDeskFaint: 'rgba(42, 33, 24, 0.45)',
   amber: palette.amber,
   onAmber: palette.amberInk,
   green: palette.green,
@@ -138,60 +165,49 @@ export const lightColors: ColorTokens = {
   buddyEar: palette.buddyEar,
   buddyNose: palette.buddyNose,
   buddyOutline: palette.buddyOutline,
-  wood: '#B57A47',
-  woodLight: '#D9A26A',
-  woodDark: '#7E4E2B',
-  woodDeep: '#5A341B',
-  cupboardLabel: '#F6E7D2',
+  // A dark walnut bookcase, so the leather volumes stand on something as old and quiet as they are.
+  wood: '#5A3A24',
+  woodLight: '#7A5234',
+  woodDark: '#3A2416',
+  woodDeep: '#24160D',
+  cupboardLabel: '#E9DDC0',
   grain: palette.black,
-  shadowBase: '#5B3E1F',
-  scrim: 'rgba(42, 33, 24, 0.35)',
+  shadowBase: '#4A3A28',
+  scrim: 'rgba(20, 16, 12, 0.45)',
+  // Deeper gold by day, so it reads on the pale cover.
+  gilt: '#9A7A3A',
+  giltBright: '#86682C',
+  stitch: 'rgba(120, 90, 40, 0.4)',
+  wax: palette.wax,
+  inkBlue: palette.inkBlue,
+  sepia: palette.sepia,
 };
 
+/** Lamplight: the same diary at night. The leather is deeper, the pages and the gold a little dimmer. */
 export const darkColors: ColorTokens = {
-  desk: palette.deskNight,
-  deskDeep: palette.deskNightDeep,
-  panel: palette.paperWhiteDim,
-  control: palette.paperWhiteDim,
-  primary: palette.amber,
-  onPrimary: palette.amberInk,
-  hairline: palette.inkFaint,
-  paper: palette.creamDim,
-  paperWhite: palette.paperWhiteDim,
+  ...lightColors,
+  panel: palette.pageLamp,
+  control: palette.pageLamp,
+  primary: palette.giltLamp,
+  paper: palette.pageLamp,
+  paperWhite: palette.pageBrightLamp,
   kraft: palette.kraftDim,
   blush: '#E9CDC3',
   cork: '#9C7550',
   corkDark: '#5E4029',
-  gridLine: 'rgba(244, 236, 216, 0.07)',
-  ruleLine: palette.ruleLine,
-  marginLine: palette.marginLine,
-  ink: palette.ink,
-  inkMuted: palette.inkMuted,
-  inkFaint: palette.inkFaint,
-  onDesk: palette.moonCream,
-  onDeskMuted: 'rgba(244, 236, 216, 0.68)',
-  onDeskFaint: 'rgba(244, 236, 216, 0.45)',
-  amber: palette.amber,
-  onAmber: palette.amberInk,
-  green: palette.green,
-  onGreen: palette.greenInk,
-  metal: palette.metal,
-  metalLight: palette.metalLight,
-  lamp: palette.lamp,
-  buddy: palette.buddy,
-  buddyShade: palette.buddyShade,
-  buddyBlush: palette.buddyBlush,
-  buddyEar: palette.buddyEar,
-  buddyNose: palette.buddyNose,
-  buddyOutline: palette.buddyOutline,
-  wood: '#9A6339',
-  woodLight: '#BE8752',
-  woodDark: '#653D20',
-  woodDeep: '#3E2412',
-  cupboardLabel: '#E9D6BC',
-  grain: palette.white,
+  onDesk: '#E3D7BC',
+  onDeskMuted: 'rgba(227, 215, 188, 0.7)',
+  onDeskFaint: 'rgba(227, 215, 188, 0.44)',
   shadowBase: palette.black,
-  scrim: 'rgba(0, 0, 0, 0.5)',
+  wood: '#4A2F1D',
+  woodLight: '#644329',
+  woodDark: '#2E1C11',
+  woodDeep: '#1C1109',
+  cupboardLabel: '#DDD0B2',
+  scrim: 'rgba(0, 0, 0, 0.6)',
+  gilt: palette.giltLamp,
+  giltBright: '#C7A562',
+  stitch: 'rgba(184, 150, 79, 0.38)',
 };
 
 export const spacing = {
@@ -204,6 +220,19 @@ export const spacing = {
   xl: 24,
   xxl: 32,
   xxxl: 48,
+} as const;
+
+/**
+ * Every control in the diary is made the same way and the same size: the bar, buttons, the stitched slips of buttons,
+ * the Day/Night switch, the tape deck. One corner, one height, the stitching the same distance in, the highlighter wash
+ * the same distance in and laid on at the same slight angle.
+ */
+export const control = {
+  radius: 12,
+  height: 52,
+  stitchInset: 4,
+  washInset: 6,
+  washTilt: '-1.5deg',
 } as const;
 
 export const radii = {
@@ -273,8 +302,17 @@ export const sizes = {
 } as const;
 
 /**
- * Handwriting everywhere: Caveat in three weights. Sizes run larger than a sans would, because Caveat is small on the line.
+ * A bound diary's type. Cormorant Garamond is the gilt lettering (titles, buttons, labels); IM Fell English is the
+ * old printer's face for dates and quiet notes; Caveat is the person's own handwriting (their words, on the page).
+ * Caveat's sizes run larger than a serif would, because it is small on the line.
  */
+const GILT = 'CormorantGaramond_600SemiBold';
+const GILT_ITALIC = 'CormorantGaramond_600SemiBold_Italic';
+const PRINT = 'IMFellEnglish_400Regular';
+const PRINT_ITALIC = 'IMFellEnglish_400Regular_Italic';
+const BOLD = 'Caveat_700Bold';
+const MEDIUM = 'Caveat_500Medium';
+
 const hand = (size: number, lineHeight: number, family = 'Caveat_600SemiBold', letterSpacing = 0): TextStyle => ({
   fontFamily: family,
   fontSize: size,
@@ -284,28 +322,42 @@ const hand = (size: number, lineHeight: number, family = 'Caveat_600SemiBold', l
   // (Android clips text inside its padding, so big headings also get a trailing space: see HAND_TAIL.)
   paddingRight: Math.ceil(size * 0.15),
 });
-const BOLD = 'Caveat_700Bold';
-const MEDIUM = 'Caveat_500Medium';
+/** Serif faces overhang far less, but italics still lean past their box. */
+const serif = (size: number, lineHeight: number, family: string, letterSpacing = 0): TextStyle => ({
+  fontFamily: family,
+  fontSize: size,
+  lineHeight,
+  letterSpacing,
+  paddingRight: Math.ceil(size * 0.06),
+});
 
 export const typography = {
-  title: hand(50, 54, BOLD),
+  /** Page titles: gilt italic, like a name tooled on the cover. */
+  title: serif(40, 46, GILT_ITALIC),
   /** Title on narrow phones, so title, count and buttons still share one line. */
-  titleNarrow: hand(42, 46, BOLD),
-  heading: hand(32, 36, BOLD),
-  headline: hand(36, 40, BOLD),
-  month: hand(40, 44, BOLD),
-  label: hand(23, 27, BOLD),
-  caption: hand(22, 26, MEDIUM),
-  stamp: hand(18, 20, BOLD, 1.4),
-  stampLarge: hand(28, 30, BOLD, 1.6),
-  albumYear: hand(40, 44, BOLD),
+  titleNarrow: serif(34, 40, GILT_ITALIC),
+  heading: serif(28, 32, GILT_ITALIC),
+  headline: serif(30, 36, GILT_ITALIC),
+  month: serif(32, 38, GILT_ITALIC),
+  /** Buttons and short labels. */
+  label: serif(18, 22, GILT, 0.4),
+  /** Quiet printed notes on the leather or a page: subtitles, help text, dates. */
+  caption: serif(17, 23, PRINT_ITALIC),
+  /** Small tooled capitals ("RETURNED TO YOU TODAY", "MMXXVI"). */
+  stamp: serif(13, 16, GILT, 2.4),
+  stampLarge: serif(20, 24, GILT, 2.8),
+  albumYear: serif(32, 38, GILT),
+  /** Printed text on a page or the leather (settings rows, notes), upright and italic. */
+  print: serif(18, 24, PRINT),
+  printItalic: serif(18, 24, PRINT_ITALIC),
+  /** The person's own words, in their hand. */
   hand: hand(24, 28),
-  handSmall: hand(19, 22, MEDIUM),
+  handSmall: serif(15, 20, PRINT_ITALIC),
   handLarge: hand(32, 36, BOLD),
   body: hand(22, 28, MEDIUM),
   bodyStrong: hand(22, 28, BOLD),
   ticket: hand(23, 26),
-  small: hand(19, 22, MEDIUM),
+  small: serif(15, 20, PRINT),
 } as const;
 
 /** Paper-on-desk shadow: tight + offset, layered, tinted by the object's color (never flat gray). */
@@ -367,21 +419,21 @@ export const motion = {
   introHoldMs: 750,
   introExitMs: 420,
   introReducedHoldMs: 700,
-  /** A diary leaving the shelf: pull out, float to the middle, cover opens (stars burst), then it dissolves into its page. */
+  /** A volume leaving the shelf: heavy, so it pulls out slowly, floats with weight, and its cover swings open slowly and lands with a thud. */
   bookFlight: {
     /** Tipped forward and slid out of its row. */
-    pullMs: 300,
+    pullMs: 440,
     /** Floats to the middle in an arc, growing. */
-    travelMs: 620,
+    travelMs: 820,
     /** Turns, like a real box, from spine to cover. */
-    turnMs: 520,
+    turnMs: 640,
     /** The cover swings open on its spine and lies flat; the book slides to centre the spread. */
-    openMs: 820,
+    openMs: 1000,
     /** Two pages flutter over after the cover, one after another. */
     pageMs: 560,
     pageGapMs: 140,
     burstMs: 900,
-    settleMs: 220,
+    settleMs: 300,
     readyFallbackMs: 700,
     /** Zooms into the right-hand page until it is the year's page. */
     diveMs: 640,

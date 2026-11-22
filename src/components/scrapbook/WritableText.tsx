@@ -1,6 +1,6 @@
 import { useEffect, useRef, type ComponentRef } from 'react';
 import { Text, TextInput, type StyleProp, type TextStyle } from 'react-native';
-import { useTheme } from '../../theme';
+import { useTheme, withAlpha } from '../../theme';
 
 /** What a scrapbook object needs to be written on directly (the writing page). */
 export interface NoteEditor {
@@ -50,6 +50,9 @@ export function WritableText({ text, style, numberOfLines, editor, focusOnMount 
       onChangeText={editor.onChangeText}
       placeholder={editor.placeholder}
       placeholderTextColor={colors.inkMuted}
+      cursorColor={colors.inkBlue}
+      selectionColor={withAlpha(colors.inkBlue, 0.3)}
+      selectionHandleColor={colors.inkBlue}
       autoFocus={editor.autoFocus}
       onFocus={editor.onFocus}
       multiline

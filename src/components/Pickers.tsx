@@ -2,7 +2,6 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import { useEffect, useState } from 'react';
 import { StyleSheet, Text, View } from 'react-native';
 import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
 import { selectHaptic } from '../lib/haptics';
 import { PAPERS, useTheme, type Paper, type PaperTone } from '../theme';
 import type { IconName } from './Buttons';
@@ -15,7 +14,7 @@ export interface ToggleOption<T extends string> {
 }
 
 /**
- * A paper track with a colored tab that slides to the chosen side ("Note | Photo", "Light | Dark").
+ * A paper track with a gilt tab that slides to the chosen side ("Day | Lamplight").
  * The tab springs across; with reduce motion it just moves.
  */
 export function SlidingToggle<T extends string>({
@@ -72,9 +71,9 @@ export function SlidingToggle<T extends string>({
             accessibilityLabel={o.label}
             style={[styles.option, { minHeight: sizes.pillHeight, gap: spacing.sm }]}
           >
-            {o.icon ? <Ionicons name={o.icon} size={sizes.iconSmall + 2} color={selected ? colors.paperWhite : colors.inkMuted} /> : null}
+            {o.icon ? <Ionicons name={o.icon} size={sizes.iconSmall + 2} color={selected ? colors.onPrimary : colors.inkMuted} /> : null}
             {/* Extra room on the right: Android under-measures Caveat and clips the last letter of a short label ("Ligh"). */}
-            <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.label, { color: selected ? colors.paperWhite : colors.inkMuted, paddingRight: spacing.md }]}>
+            <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.label, { color: selected ? colors.onPrimary : colors.inkMuted, paddingRight: spacing.md }]}>
               {/* A trailing space: Android under-measures Caveat and clips the last letter of a short label ("Ligh"). */}
               {`${o.label} `}
             </Text>
@@ -85,7 +84,7 @@ export function SlidingToggle<T extends string>({
   );
 }
 
-/** A little square of each paper color (in the chosen tone), dotted like the page. The chosen one is lifted and checked. */
+/** A little swatch of each paper (in the chosen tone), dotted like the page. The chosen one is lifted and checked. */
 export function PaperPicker({ value, tone, onChange }: { value: string; tone: PaperTone; onChange: (paper: string) => void }) {
   const { spacing } = useTheme();
   return (
@@ -97,14 +96,13 @@ export function PaperPicker({ value, tone, onChange }: { value: string; tone: Pa
   );
 }
 
-const DOTS = 3;
+const STITCH = 5;
 
 function PaperChip({ paper, tone, selected, onPress }: { paper: Paper; tone: PaperTone; selected: boolean; onPress: () => void }) {
   const theme = useTheme();
   const { colors, sizes, radii, typography, spacing } = theme;
   const s = sizes.paperChip;
   const dark = tone === 'dark';
-  const gap = s / (DOTS + 1);
   return (
     <PressableScale onPress={onPress} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${paper.label} paper`}>
       <View style={{ alignItems: 'center', gap: spacing.xxs, width: s + spacing.sm }}>
@@ -122,14 +120,18 @@ function PaperChip({ paper, tone, selected, onPress }: { paper: Paper; tone: Pap
             justifyContent: 'center',
           }}
         >
-          <Svg width={s} height={s} style={StyleSheet.absoluteFill}>
-            {Array.from({ length: DOTS * DOTS }, (_, i) => (
-              <Circle key={i} cx={gap * ((i % DOTS) + 1)} cy={gap * (Math.floor(i / DOTS) + 1)} r={1.6} fill={dark ? colors.paperWhite : paper.dots} opacity={0.5} />
+          {/* The printed dots, as on the page, and a folded corner. */}
+          <View style={{ position: 'absolute', top: STITCH, left: STITCH, right: STITCH, bottom: STITCH, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', alignContent: 'space-around' }}>
+            {Array.from({ length: 16 }, (_, i) => (
+              <View key={i} style={{ width: '25%', alignItems: 'center' }}>
+                <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: paper.dots, opacity: dark ? 0.5 : 0.6 }} />
+              </View>
             ))}
-          </Svg>
+          </View>
+          <View style={{ position: 'absolute', right: 0, bottom: 0, width: 14, height: 14, borderTopLeftRadius: 4, borderBottomRightRadius: radii.paper * 2, backgroundColor: dark ? paper.darkDeep : paper.lightDeep, boxShadow: '-1px -1px 2px rgba(0,0,0,0.15)' }} />
           {selected ? (
-            <View style={[styles.check, { backgroundColor: colors.green, borderColor: colors.paperWhite }]}>
-              <Ionicons name="checkmark" size={sizes.iconSmall} color={colors.onGreen} />
+            <View style={[styles.check, { backgroundColor: colors.primary, borderColor: colors.paperWhite }]}>
+              <Ionicons name="checkmark" size={sizes.iconSmall} color={colors.onPrimary} />
             </View>
           ) : null}
         </View>

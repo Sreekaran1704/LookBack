@@ -5,6 +5,7 @@ import { seededRng } from '../../lib/seeded';
 import { useTheme } from '../../theme';
 import { withAlpha } from '../../theme/yearColors';
 import { Raster } from './Raster';
+import { Texture } from './Texture';
 import { useSvgId } from './shared';
 
 interface Props {
@@ -31,7 +32,7 @@ const GRAIN_LIGHT = '#FFFFFF';
 const GRAIN_DARK = '#000000';
 
 /**
- * A little wooden cupboard with open shelves; the year diaries stand on them upright, spines out. Drawn in code:
+ * A small dark-walnut bookcase with open shelves; the year diaries stand on them upright, spines out. Drawn in code:
  * a back panel of vertical planks with wood grain, side boards, a crown on top, shelves whose front
  * edges catch the light and cast a soft shadow below, and two feet. The wood is drawn once and kept
  * as a texture, so it costs nothing while scrolling.
@@ -97,8 +98,11 @@ export const Cupboard = memo(function Cupboard({ shelves, decor, width }: Props)
                     borderWidth: 1.5,
                     borderColor: colors.woodDeep,
                     boxShadow: theme.shadow(colors.woodDeep, 1.6),
+                    overflow: 'hidden',
                   }}
-                />
+                >
+                  <Texture kind="wood" opacity={0.6} />
+                </View>
                 <Svg width={width} height={height} style={{ position: 'absolute', left: 0, top: 0 }}>
                   <Defs>
                     <LinearGradient id={panelId} x1="0" y1="0" x2="1" y2="0">
@@ -137,6 +141,13 @@ export const Cupboard = memo(function Cupboard({ shelves, decor, width }: Props)
                   <Rect x={3} y={CROWN} width={2} height={height - CROWN - 6} fill={GRAIN_LIGHT} opacity={0.2} />
                   <Rect x={width - 5} y={CROWN} width={2} height={height - CROWN - 6} fill={GRAIN_DARK} opacity={0.2} />
                 </Svg>
+                {/* The grain of the back boards and the crown, over the drawn shading. */}
+                <View style={{ position: 'absolute', left: CUPBOARD_FRAME, top: CROWN, width: innerW, height: height - CROWN - CUPBOARD_FRAME, overflow: 'hidden' }}>
+                  <Texture kind="wood" opacity={0.4} style={{ transform: [{ scaleX: -1 }] }} />
+                </View>
+                <View style={{ position: 'absolute', left: 0, top: 0, width, height: CROWN, borderTopLeftRadius: radii.card, borderTopRightRadius: radii.card, overflow: 'hidden' }}>
+                  <Texture kind="wood" opacity={0.5} />
+                </View>
               </>
             ) : null}
           </View>
@@ -175,8 +186,11 @@ function Shelf({ last }: { last: boolean }) {
         borderBottomColor: colors.woodDark,
         boxShadow: last ? undefined : `0px 6px 8px ${withAlpha(GRAIN_DARK, 0.35)}`,
         zIndex: 1,
+        overflow: 'hidden',
       }}
-    />
+    >
+      <Texture kind="wood" opacity={0.55} />
+    </View>
   );
 }
 

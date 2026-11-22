@@ -89,11 +89,15 @@ export interface TidyOptions {
   /** Extra space after each month. */
   groupGap: number;
   maxTilt: number;
+  /** Each item's own height, in the same nested order as the groups (a note is shorter than a polaroid). Missing = `cellH`. */
+  heights?: readonly (readonly number[])[];
 }
 
 export interface TidyLayout extends Layout {
   /** Top of each month's heading, in group order. */
   headers: number[];
+  /** Top of each row of each month, in group order (where its string hangs). */
+  rowTops: number[][];
 }
 
 /**
@@ -103,20 +107,26 @@ export interface TidyLayout extends Layout {
 export function tidyLayout(groups: readonly (readonly string[])[], o: TidyOptions): TidyLayout {
   const slots: Slot[] = [];
   const headers: number[] = [];
+  const rowTops: number[][] = [];
   let y = 0;
-  for (const ids of groups) {
+  groups.forEach((ids, g) => {
     headers.push(y);
     y += o.headerH;
-    ids.forEach((id, j) => {
-      const rng = seededRng(`tidy-${id}`);
-      slots.push({
-        x: (j % o.columns) * (o.itemW + o.gap),
-        y: y + Math.floor(j / o.columns) * (o.cellH + o.gap),
-        rotate: rng.range(-o.maxTilt, o.maxTilt),
-        scale: 1,
+    const tops: number[] = [];
+    const rows = Math.ceil(ids.length / o.columns);
+    for (let r = 0; r < rows; r++) {
+      tops.push(y);
+      const inRow = ids.slice(r * o.columns, (r + 1) * o.columns);
+      // A row is as tall as the tallest thing in it, so a row of short notes doesn't leave a polaroid's worth of space.
+      const rowH = Math.max(...inRow.map((_, k) => o.heights?.[g]?.[r * o.columns + k] ?? o.cellH));
+      inRow.forEach((id, k) => {
+        const rng = seededRng(`tidy-${id}`);
+        slots.push({ x: k * (o.itemW + o.gap), y, rotate: rng.range(-o.maxTilt, o.maxTilt), scale: 1 });
       });
-    });
-    y += Math.ceil(ids.length / o.columns) * (o.cellH + o.gap) + o.groupGap;
-  }
-  return { slots, headers, height: y };
+      y += rowH + (r < rows - 1 ? o.gap : 0);
+    }
+    rowTops.push(tops);
+    y += o.groupGap;
+  });
+  return { slots, headers, rowTops, height: y };
 }

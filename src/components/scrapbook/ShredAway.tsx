@@ -1,384 +1,299 @@
-import { Image } from 'expo-image';
-import { useEffect, useRef } from 'react';
-import { Modal, Pressable, StyleSheet, View, useWindowDimensions } from 'react-native';
+import { useEffect, useRef, useState } from 'react';
+import { Modal, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
+import { GestureDetector, GestureHandlerRootView, usePanGesture } from 'react-native-gesture-handler';
 import Animated, {
   Easing,
   Extrapolation,
   interpolate,
-  runOnJS,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
+  withRepeat,
+  withSequence,
+  withSpring,
   withTiming,
-  type SharedValue,
 } from 'react-native-reanimated';
-import Svg, { Circle, Ellipse, G, Path, Rect } from 'react-native-svg';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import { scheduleOnRN } from 'react-native-worklets';
 import type { Entry } from '../../data';
+import { tearHaptic, thudHaptic } from '../../lib/haptics';
 import { useTheme, withAlpha } from '../../theme';
-import { BOW, POSES } from './Buddy';
+import { PillButton } from '../Buttons';
 import { PaperBackground } from './PaperBackground';
 import { ScrapObject } from './ScrapObject';
+import { CassetteSmash } from './CassetteSmash';
+import { formatDisplayDate } from '../../lib/dates';
+import { formatVoiceMs } from '../../lib/voice';
 
 /**
- * Deleting a memory: the bunny's head opens like a lid, its pink brain peeks out, the memory floats
- * up out of it and drops into a little paper shredder with a face, which shakes and lets paper strips
- * fall out of its bottom. Then the bunny closes its head and the whole page fades away. Tap to skip.
- * Reduce motion: a short fade with "all gone".
- *
- * Everything runs off one clock (`t`, in ms) on the UI thread; each piece reads its own window of it.
+ * Tearing a page out, by hand (after the "Tear out this page?" warning). A perforated strip runs down the middle of
+ * the page, with a little paper pull-tab hanging from its top, swaying. Pull the tab down and the strip tears off
+ * following your finger, one perforation at a time (each one a small varied tick, so it feels like paper ripping),
+ * folding down under your finger while the two halves of the page part. Reach the bottom and the halves fall away:
+ * the memory is deleted. Let go early and the strip zips back; "Keep it" backs out. A voice memory's cassette is broken
+ * first, struck until it bursts (`CassetteSmash`), then the page is torn.
  */
 
-/** The timeline, in ms. */
-const T = {
-  fadeIn: [0, 280],
-  pop: [120, 520],
-  lidOpen: [560, 960],
-  rise: [900, 1500],
-  travel: [1500, 2100],
-  lidClose: [1750, 2100],
-  sink: [2150, 2950],
-  shake: [2150, 3050],
-  strips: 2250,
-  stripMs: 950,
-  stripGap: 70,
-  textTwo: 1500,
-  textThree: 3050,
-  fadeOut: [3550, 3950],
-  total: 3950,
-  reduced: 900,
-} as const;
+/** The strip: its width, the perforation holes along both edges, and the folded flap that hangs under the finger. */
+const STRIP = 26;
+const HOLE = 3.2;
+const HOLE_GAP = 12;
+const FLAP_MAX = 64;
+/** The pull-tab hanging from the top of the strip, and how it sways while it waits. */
+const TAB_W = 46;
+const TAB_H = 40;
+const SWAY_DEG = 6;
+const SWAY_MS = 1300;
+/** The halves part a little as the tear runs (degrees, at the top), then fall away. */
+const PART_DEG = 3;
+const FALL_MS = 700;
+const GONE_HOLD_MS = 1000;
+/** Let go with the tear this far down (or past the bottom) and the page comes away. */
+const DONE_AT = 0.94;
+/** The leather dimmed under the page, and the darker back of the paper on the folded strip. */
+const DIM = '#000000';
+const PAPER_BACK = 'rgba(0, 0, 0, 0.12)';
 
-/** Where the bunny's head opens: a line through the top of its head (share of the picture's height). */
-const CUT = 0.42;
-/** The lid's hinge, on the left of the head (share of the picture's width). */
-const HINGE_X = 0.24;
-const LID_OPEN_DEG = -78;
-/** The head's opening at the cut line (share of the picture's width). */
-const RIM_LEFT = 0.23;
-const RIM_RIGHT = 0.77;
-
-const BRAIN = '#F6A9C1';
-const BRAIN_SHADE = '#E07FA0';
-const HEAD_INSIDE = '#E9CBA9';
-const HEAD_RIM = '#D8B590';
-const SLOT = '#2A2118';
-const FACE = '#2A2118';
-const CHEEK = '#FF9FB5';
-const STRIP_COUNT = 7;
+/** Where one half of the page is: parting as the tear runs (`p`, 0–1), then falling away (`f`, 0–1). */
+function halfMotion(p: number, fallen: number, dir: -1 | 1, W: number, H: number) {
+  'worklet';
+  const f = Easing.in(Easing.quad)(fallen);
+  return {
+    opacity: interpolate(fallen, [0, 0.7, 1], [1, 1, 0], Extrapolation.CLAMP),
+    transform: [{ translateX: dir * (p * 4 + f * W * 0.4) }, { translateY: f * H * 0.5 }, { rotate: `${dir * (p * PART_DEG + f * 24)}deg` }],
+  };
+}
 
 interface Props {
   entry: Entry;
-  /** Called when the animation ends (or is skipped). */
+  /** The page came away: delete the memory now. */
   onDone: () => void;
+  /** "Keep it": back out without deleting. */
+  onCancel?: () => void;
 }
 
-export function ShredAway({ entry, onDone }: Props) {
+export function ShredAway({ entry, onDone, onCancel }: Props) {
   const theme = useTheme();
-  const { colors, typography, nav, spacing } = theme;
+  const { colors, typography, spacing, motion } = theme;
   const { width: W, height: H } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const t = useSharedValue(0);
-  const cardH = useSharedValue(W * 0.5);
+  const [pageH, setPageH] = useState(0);
+  const [torn, setTorn] = useState(false);
+  // A voice memory's tape is pulled out (and snaps) before its page can be torn.
+  const [stage, setStage] = useState<'tape' | 'page'>(entry.voicePath && !reduceMotion ? 'tape' : 'page');
   const done = useRef(false);
+  const tornRef = useRef(false);
+  /** How far down the page the tear has run (points). */
+  const tear = useSharedValue(0);
+  const hole = useSharedValue(0);
+  const fall = useSharedValue(0);
+  const sway = useSharedValue(0);
+  const holding = useSharedValue(0);
+  /**
+   * The page's height and whether it has come away, kept where the gesture's callbacks run: they can hold an older
+   * copy of this component's state (the height before the page was measured), so they read these instead.
+   */
+  const pageHv = useSharedValue(0);
+  const ripped = useSharedValue(0);
 
-  const total = reduceMotion ? T.reduced : T.total;
-  // Once only, whether the clock ran out or the person tapped to skip.
+  const pageW = W * 0.72;
+  const left = (W - pageW) / 2;
+  const top = H * 0.24;
+  const mid = pageW / 2;
+
+  // The tab sways gently while it hangs there waiting.
+  useEffect(() => {
+    if (reduceMotion) return;
+    sway.set(withRepeat(withSequence(withTiming(1, { duration: SWAY_MS, easing: Easing.inOut(Easing.sin) }), withTiming(-1, { duration: SWAY_MS, easing: Easing.inOut(Easing.sin) })), -1, true));
+  }, [sway, reduceMotion]);
+
   const finish = () => {
     if (done.current) return;
     done.current = true;
     onDone();
   };
+  const comeAway = () => {
+    if (done.current || tornRef.current) return;
+    tornRef.current = true;
+    setTorn(true);
+    thudHaptic();
+    tear.set(withTiming(pageHv.get(), { duration: 120 }));
+    fall.set(withTiming(1, { duration: reduceMotion ? 1 : FALL_MS, easing: Easing.in(Easing.quad) }));
+    setTimeout(finish, (reduceMotion ? 0 : FALL_MS) + GONE_HOLD_MS);
+  };
 
-  useEffect(() => {
-    t.set(
-      withTiming(total, { duration: total, easing: Easing.linear }, (ended) => {
-        if (ended) runOnJS(finish)();
-      }),
-    );
-    // Runs once: the clock starts when the shredder appears.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  // Layout: the bunny upper left, the shredder lower right, the memory arcs from one to the other.
-  const B = Math.min(W * 0.46, 210);
-  const bunnyLeft = W * 0.07;
-  const bunnyTop = H * 0.2;
-  const brainX = bunnyLeft + B * 0.5;
-  const brainY = bunnyTop + B * CUT;
-  const cardW = W * 0.4;
-  const SW = W * 0.56;
-  const SH = SW * 0.62;
-  const shredX = W * 0.6;
-  const slotY = H * 0.56;
-  const bodyTop = slotY - SH * 0.12;
-  const bodyBottom = bodyTop + SH;
-  const stripW = (SW * 0.62) / STRIP_COUNT - 3;
-  const stripL = H * 0.11;
-
-  const root = useAnimatedStyle(() => {
-    const v = t.get();
-    if (reduceMotion) return { opacity: interpolate(v, [0, 200, T.reduced - 250, T.reduced], [0, 1, 1, 0], Extrapolation.CLAMP) };
-    return { opacity: interpolate(v, [T.fadeIn[0], T.fadeIn[1], T.fadeOut[0], T.fadeOut[1]], [0, 1, 1, 0], Extrapolation.CLAMP) };
+  const pan = usePanGesture({
+    onActivate: () => {
+      holding.set(withTiming(1, { duration: 120 }));
+    },
+    onUpdate: (e) => {
+      const h = pageHv.get();
+      if (h <= 0 || ripped.get() > 0) return;
+      // The tear follows the finger down, one to one.
+      const y = Math.max(0, Math.min(h, e.translationY));
+      tear.set(y);
+      // Each perforation that gives is a tick (only going down: tearing, not mending).
+      const n = Math.floor(y / HOLE_GAP);
+      if (n > hole.get()) {
+        hole.set(n);
+        scheduleOnRN(tearHaptic, n);
+      }
+      if (y >= h) {
+        ripped.set(1);
+        scheduleOnRN(comeAway);
+      }
+    },
+    onDeactivate: () => {
+      holding.set(withTiming(0, { duration: 160 }));
+      if (ripped.get() > 0) return;
+      const h = pageHv.get();
+      if (h > 0 && tear.get() >= h * DONE_AT) {
+        ripped.set(1);
+        scheduleOnRN(comeAway);
+        return;
+      }
+      // Let go early: the strip zips back up.
+      hole.set(0);
+      tear.set(withSpring(0, motion.lift));
+    },
   });
 
-  const bunny = useAnimatedStyle(() => {
-    const v = t.get();
-    const pop = interpolate(v, [T.pop[0], T.pop[1] - 120, T.pop[1]], [0.3, 1.08, 1], Extrapolation.CLAMP);
-    // A little nod while the memory leaves, and a happy hop at the end.
-    const nod = interpolate(v, [T.rise[0], T.rise[0] + 200, T.rise[1]], [0, -6, 0], Extrapolation.CLAMP);
-    const hop = interpolate(v, [T.textThree, T.textThree + 160, T.textThree + 420], [0, -14, 0], Extrapolation.CLAMP);
-    return { transform: [{ translateY: nod + hop }, { scale: pop }] };
-  });
-
-  const lid = useAnimatedStyle(() => {
-    const v = t.get();
-    const open = interpolate(v, [T.lidOpen[0], T.lidOpen[1], T.lidClose[0], T.lidClose[1]], [0, 1, 1, 0], Extrapolation.CLAMP);
-    return { transform: [{ rotate: `${Easing.out(Easing.back(1.6))(open) * LID_OPEN_DEG}deg` }] };
-  });
-
-  const brain = useAnimatedStyle(() => {
-    const v = t.get();
-    const up = interpolate(v, [T.lidOpen[0] + 150, T.lidOpen[1] + 100, T.lidClose[0], T.lidClose[1]], [0, 1, 1, 0], Extrapolation.CLAMP);
-    // It wiggles while the memory is pulled out of it.
-    const wiggle = v > T.rise[0] && v < T.rise[1] ? Math.sin(v / 40) * 2 : 0;
-    // Hidden while the head is shut, so no pink peeks over the bunny's forehead.
-    return { opacity: Math.min(1, up * 4), transform: [{ translateY: -up * B * 0.07 }, { rotate: `${wiggle}deg` }] };
-  });
-
-  // The opening's rim and the lid's underside only show while the head is open (no seam when shut).
-  const inside = useAnimatedStyle(() => {
-    const v = t.get();
-    const open = interpolate(v, [T.lidOpen[0], T.lidOpen[0] + 120, T.lidClose[1] - 120, T.lidClose[1]], [0, 1, 1, 0], Extrapolation.CLAMP);
-    return { opacity: open };
-  });
-
-  const card = useAnimatedStyle(() => {
-    const v = t.get();
-    const h = cardH.get();
-    const peakX = W * 0.62;
-    const peakY = H * 0.16 + h * 0.4;
-    const overSlotY = slotY - h * 0.75 * 0.5;
-    let cx = brainX;
-    let cy = brainY;
-    let scale = 0.1;
-    let rot = 0;
-    let opacity = 0;
-    if (v >= T.rise[0] && v < T.travel[0]) {
-      const p = (v - T.rise[0]) / (T.rise[1] - T.rise[0]);
-      const up = Easing.out(Easing.cubic)(p);
-      cx = brainX + (peakX - brainX) * Easing.inOut(Easing.quad)(p);
-      cy = brainY + (peakY - brainY) * up;
-      scale = 0.1 + 0.65 * up;
-      rot = -14 * p;
-      opacity = Math.min(1, p * 4);
-    } else if (v >= T.travel[0] && v < T.sink[0]) {
-      const p = Math.min(1, (v - T.travel[0]) / (T.travel[1] - T.travel[0]));
-      cx = peakX + (shredX - peakX) * p;
-      cy = peakY + (overSlotY - peakY) * Easing.in(Easing.quad)(p);
-      scale = 0.75;
-      rot = -14 + 14 * Easing.out(Easing.quad)(p);
-      opacity = 1;
-    } else if (v >= T.sink[0]) {
-      const p = Math.min(1, (v - T.sink[0]) / (T.sink[1] - T.sink[0]));
-      cx = shredX + Math.sin(v / 22) * 1.5;
-      cy = overSlotY + h * 0.8 * Easing.in(Easing.quad)(p);
-      scale = 0.75;
-      opacity = 1;
-    }
+  const leftHalf = useAnimatedStyle(() => halfMotion(pageHv.get() > 0 ? tear.get() / pageHv.get() : 0, fall.get(), -1, W, H));
+  const rightHalf = useAnimatedStyle(() => halfMotion(pageHv.get() > 0 ? tear.get() / pageHv.get() : 0, fall.get(), 1, W, H));
+  // What is left of the strip below the tear.
+  const stripStyle = useAnimatedStyle(() => ({ top: tear.get(), height: Math.max(0, pageHv.get() - tear.get()), opacity: 1 - fall.get() }));
+  const stripInner = useAnimatedStyle(() => ({ transform: [{ translateY: -tear.get() }] }));
+  // The torn-off strip, folded down under the finger.
+  const flapStyle = useAnimatedStyle(() => ({ top: tear.get(), height: Math.min(tear.get(), FLAP_MAX), opacity: 1 - fall.get() }));
+  // The tab: hangs over the top edge while waiting; once pulled it rides at the end of the folded strip, under the finger.
+  const tabStyle = useAnimatedStyle(() => {
+    const t = tear.get();
     return {
-      opacity,
-      transform: [{ translateX: cx - cardW / 2 }, { translateY: cy - h / 2 }, { rotate: `${rot}deg` }, { scale }],
+      opacity: 1 - fall.get(),
+      transform: [{ translateY: t + Math.min(t, FLAP_MAX) }, { rotate: `${(1 - holding.get()) * sway.get() * SWAY_DEG}deg` }, { scale: 1 + holding.get() * 0.06 }],
     };
   });
+  const hintStyle = useAnimatedStyle(() => ({ opacity: interpolate(tear.get(), [0, 30], [1, 0], Extrapolation.CLAMP) }));
 
-  const shredder = useAnimatedStyle(() => {
-    const v = t.get();
-    const on = v > T.shake[0] && v < T.shake[1];
-    const appear = interpolate(v, [T.travel[0] - 300, T.travel[0]], [0, 1], Extrapolation.CLAMP);
-    return {
-      opacity: appear,
-      transform: [
-        { translateX: on ? Math.sin(v / 18) * 2.2 : 0 },
-        { translateY: (1 - appear) * 30 + (on ? Math.abs(Math.sin(v / 27)) * -2 : 0) },
-        { scaleY: on ? 1 + Math.sin(v / 35) * 0.015 : 1 },
-      ],
-    };
-  });
-
-  const lineOne = useAnimatedStyle(() => ({ opacity: interpolate(t.get(), [T.pop[0], T.pop[1], T.textTwo - 150, T.textTwo], [0, 1, 1, 0], Extrapolation.CLAMP) }));
-  const lineTwo = useAnimatedStyle(() => ({ opacity: interpolate(t.get(), [T.textTwo, T.textTwo + 150, T.textThree - 150, T.textThree], [0, 1, 1, 0], Extrapolation.CLAMP) }));
-  const lineThree = useAnimatedStyle(() => ({ opacity: reduceMotion ? 1 : interpolate(t.get(), [T.textThree, T.textThree + 150], [0, 1], Extrapolation.CLAMP) }));
-
-  const textTop = H * 0.08;
-  const said = [typography.headline, { color: colors.onDesk, textAlign: 'center' as const, position: 'absolute' as const, left: spacing.gutter, right: spacing.gutter, top: textTop }];
+  const holes = pageH > 0 ? Math.floor(pageH / HOLE_GAP) : 0;
+  const perforations = [mid - STRIP / 2, mid + STRIP / 2].map((x) =>
+    Array.from({ length: holes }, (_, i) => (
+      <View key={`${x}-${i}`} style={{ position: 'absolute', left: x - HOLE / 2, top: HOLE_GAP * (i + 0.5) - HOLE / 2, width: HOLE, height: HOLE, borderRadius: HOLE / 2, backgroundColor: colors.deskDeep, opacity: 0.85 }} />
+    )),
+  );
+  const page = <ScrapObject entry={entry} width={pageW} numberOfLines={6} raster={false} />;
 
   return (
-    <Modal visible transparent animationType="none" statusBarTranslucent navigationBarTranslucent onRequestClose={finish}>
-      <Animated.View style={[StyleSheet.absoluteFill, root]}>
+    <Modal visible transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onCancel ?? finish}>
+      {/* A Modal is its own window on Android: gestures inside it need their own root. */}
+      <GestureHandlerRootView style={StyleSheet.absoluteFill}>
         <PaperBackground variant="dots" desk />
-        <Pressable accessibilityRole="button" accessibilityLabel="Skip" onPress={finish} style={StyleSheet.absoluteFill}>
-          {reduceMotion ? (
-            <Animated.Text style={[said, { top: H * 0.42 }, lineThree]}>all gone ✿ </Animated.Text>
-          ) : (
-            <>
-              <Animated.Text style={[said, lineOne]}>Bun is forgetting it… </Animated.Text>
-              <Animated.Text style={[said, lineTwo]}>shred, shred, shred ✂ </Animated.Text>
-              <Animated.Text style={[said, lineThree]}>all gone ✿ </Animated.Text>
+        <View style={[StyleSheet.absoluteFill, { backgroundColor: withAlpha(DIM, 0.25) }]} />
 
-              {/* Paper strips slide out of the shredder's bottom (drawn behind it). */}
-              {Array.from({ length: STRIP_COUNT }, (_, i) => (
-                <Strip
-                  key={i}
-                  index={i}
-                  t={t}
-                  left={shredX - SW * 0.31 + i * (stripW + 3)}
-                  top={bodyBottom - stripL - SH * 0.08}
-                  width={stripW}
-                  length={stripL}
-                  paper={colors.paperWhite}
-                  line={withAlpha(colors.ink, 0.35)}
-                />
-              ))}
+        <View style={{ position: 'absolute', left: spacing.gutter, right: spacing.gutter, top: insets.top + spacing.xl, gap: spacing.xs }}>
+          <Text style={[typography.headline, { color: colors.giltBright, textAlign: 'center', alignSelf: 'stretch' }]}>{stage === 'tape' ? 'Break the tape ' : torn ? 'Torn out. ' : 'Pull the strip '}</Text>
+          <Text style={[typography.caption, { color: colors.onDeskMuted, textAlign: 'center', alignSelf: 'stretch' }]}>
+            {stage === 'tape' ? 'First the voice. Strike the cassette until it breaks.' : torn ? "It won't come back." : 'Take the tab and pull it all the way down to tear the page out.'}
+          </Text>
+        </View>
 
-              <Animated.View style={[{ position: 'absolute', left: shredX - SW / 2, top: bodyTop, width: SW, height: SH }, shredder]}>
-                <Shredder width={SW} height={SH} body={nav.tape} lid={nav.tape2} rim={colors.paperWhite} />
-              </Animated.View>
+        {/* Measures the page once (off screen). */}
+        <View style={{ position: 'absolute', left: -W * 2, width: pageW, opacity: 0 }} onLayout={(e) => {
+            const h = e.nativeEvent.layout.height;
+            pageHv.set(h);
+            setPageH(h);
+          }} pointerEvents="none">
+          {page}
+        </View>
 
-              {/* The memory, clipped at the slot so it disappears into the shredder. */}
-              <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, width: W, height: slotY + 1, overflow: 'hidden' }}>
-                <Animated.View
-                  onLayout={(e) => cardH.set(e.nativeEvent.layout.height)}
-                  style={[{ position: 'absolute', left: 0, top: 0, width: cardW }, card]}
-                >
-                  <ScrapObject entry={entry} width={cardW} numberOfLines={3} />
+        {stage === 'tape' ? (
+          <View style={{ position: 'absolute', left: 0, top: top - spacing.xl, width: W, height: H * 0.62 }}>
+            <CassetteSmash width={W} title={formatDisplayDate(entry.localDate)} detail={formatVoiceMs(entry.voiceMs)} onBroken={() => setStage('page')} />
+          </View>
+        ) : null}
+
+        {pageH > 0 && stage === 'page' ? (
+          <GestureDetector gesture={pan}>
+            <View style={{ position: 'absolute', left, top: top - TAB_H, width: pageW, height: pageH + TAB_H * 2 }}>
+              <View style={{ position: 'absolute', left: 0, top: TAB_H, width: pageW, height: pageH }} pointerEvents="none">
+                {/* Left and right halves of the page, either side of the strip. */}
+                <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: mid - STRIP / 2, height: pageH, overflow: 'hidden', transformOrigin: 'right bottom' }, leftHalf]}>
+                  {page}
                 </Animated.View>
+                <Animated.View style={[{ position: 'absolute', left: mid + STRIP / 2, top: 0, width: mid - STRIP / 2, height: pageH, overflow: 'hidden', transformOrigin: 'left bottom' }, rightHalf]}>
+                  <View style={{ marginLeft: -(mid + STRIP / 2) }}>{page}</View>
+                </Animated.View>
+                {/* The strip still in the page, below the tear, with its perforations. */}
+                <Animated.View style={[{ position: 'absolute', left: mid - STRIP / 2, width: STRIP, overflow: 'hidden' }, stripStyle]}>
+                  <Animated.View style={[{ marginLeft: -(mid - STRIP / 2) }, stripInner]}>
+                    {page}
+                    <View style={StyleSheet.absoluteFill}>{perforations}</View>
+                  </Animated.View>
+                </Animated.View>
+                {/* The torn-off part, folded down: the back of the paper, with the torn edge at its fold. */}
+                <Animated.View
+                  style={[
+                    {
+                      position: 'absolute',
+                      left: mid - STRIP / 2,
+                      width: STRIP,
+                      backgroundColor: colors.paper,
+                      borderBottomLeftRadius: 2,
+                      borderBottomRightRadius: 2,
+                      borderTopWidth: 1.5,
+                      borderTopColor: withAlpha(colors.ink, 0.25),
+                      borderStyle: 'dashed',
+                      boxShadow: `0px 4px 6px rgba(0,0,0,0.35), inset 0px 0px 0px 100px ${PAPER_BACK}`,
+                    },
+                    flapStyle,
+                  ]}
+                />
               </View>
-
-              <Animated.View style={[{ position: 'absolute', left: bunnyLeft, top: bunnyTop, width: B, height: B, transformOrigin: 'bottom' }, bunny]}>
-                <OpenHead size={B} accent={nav.tape} lid={lid} brain={brain} inside={inside} />
+              {/* The pull-tab: a rounded paper tab hanging over the top of the strip, swaying a little. */}
+              <Animated.View
+                pointerEvents="none"
+                style={[
+                  {
+                    position: 'absolute',
+                    left: mid - TAB_W / 2,
+                    top: TAB_H * 0.2,
+                    width: TAB_W,
+                    height: TAB_H,
+                    borderRadius: 10,
+                    borderTopLeftRadius: 3,
+                    borderTopRightRadius: 3,
+                    backgroundColor: colors.paperWhite,
+                    borderWidth: 1,
+                    borderColor: withAlpha(colors.ink, 0.2),
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    transformOrigin: 'top',
+                    boxShadow: '0px 4px 8px rgba(0,0,0,0.4)',
+                  },
+                  tabStyle,
+                ]}
+              >
+                <Text style={[typography.stamp, { color: colors.sepia, fontSize: 10, letterSpacing: 1.4, paddingRight: 0 }]}>PULL</Text>
+                <Text style={[typography.stamp, { color: colors.sepia, fontSize: 11, lineHeight: 12, paddingRight: 0 }]}>↓</Text>
               </Animated.View>
-            </>
-          )}
-        </Pressable>
-      </Animated.View>
+            </View>
+          </GestureDetector>
+        ) : null}
+
+        {!torn && pageH > 0 && stage === 'page' ? (
+          <Animated.Text style={[typography.caption, { position: 'absolute', left: 0, right: 0, top: top + pageH + spacing.xl, color: colors.onDeskMuted, textAlign: 'center' }, hintStyle]}>
+            pull the tab down
+          </Animated.Text>
+        ) : null}
+
+        {/* Backing out, at the foot where a thumb reaches it. */}
+        {!torn && onCancel ? (
+          <View style={{ position: 'absolute', left: spacing.gutter, right: spacing.gutter, bottom: insets.bottom + spacing.lg }}>
+            <PillButton label="Keep it" icon="heart-outline" large onPress={onCancel} />
+          </View>
+        ) : null}
+      </GestureHandlerRootView>
     </Modal>
-  );
-}
-
-/** The bunny cut in two at its forehead: body, the inside of its head with the brain, and the top as a hinged lid. */
-type AnimStyle = ReturnType<typeof useAnimatedStyle>;
-
-function OpenHead({ size: s, accent, lid, brain, inside }: { size: number; accent: string; lid: AnimStyle; brain: AnimStyle; inside: AnimStyle }) {
-  const cutY = s * CUT;
-  const rimL = s * RIM_LEFT;
-  const rimW = s * (RIM_RIGHT - RIM_LEFT);
-  const picture = (
-    <>
-      <Image source={POSES.happy} style={{ width: s, height: s }} contentFit="fill" transition={0} cachePolicy="memory" />
-      <Image source={BOW} tintColor={accent} style={[StyleSheet.absoluteFill, { width: s, height: s }]} contentFit="fill" transition={0} cachePolicy="memory" />
-    </>
-  );
-  return (
-    <View style={{ width: s, height: s }}>
-      {/* Body: everything below the cut. */}
-      <View style={{ position: 'absolute', left: 0, top: cutY, width: s, height: s - cutY, overflow: 'hidden' }}>
-        <View style={{ position: 'absolute', left: 0, top: -cutY }}>{picture}</View>
-      </View>
-      {/* The brain, rising out of the opening. */}
-      <Animated.View style={[{ position: 'absolute', left: rimL + rimW * 0.08, top: cutY - rimW * 0.42, width: rimW * 0.84, height: rimW * 0.5 }, brain]}>
-        <Brain width={rimW * 0.84} height={rimW * 0.5} />
-      </Animated.View>
-      {/* The opening's rim, in front of the brain's lower edge so it sits inside the head. */}
-      <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: cutY - s * 0.03, width: s, height: s * 0.12 }, inside]}>
-        <Svg width={s} height={s * 0.12}>
-          <Path d={`M ${rimL} ${s * 0.03} Q ${s / 2} ${s * 0.1} ${rimL + rimW} ${s * 0.03}`} fill="none" stroke={HEAD_RIM} strokeWidth={s * 0.012} strokeLinecap="round" />
-        </Svg>
-      </Animated.View>
-      {/* The top of the head, as a lid hinged on the left. */}
-      <Animated.View style={[{ position: 'absolute', left: 0, top: 0, width: s, height: cutY, overflow: 'hidden', transformOrigin: [s * HINGE_X, cutY, 0] }, lid]}>
-        {picture}
-        {/* The underside of the lid shows as it opens. */}
-        <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, inside]}>
-          <Svg width={s} height={cutY}>
-            <Ellipse cx={s / 2} cy={cutY} rx={rimW / 2} ry={s * 0.035} fill={HEAD_INSIDE} />
-          </Svg>
-        </Animated.View>
-      </Animated.View>
-    </View>
-  );
-}
-
-/** A soft pink cartoon brain: a lumpy cloud with a middle fold and a few squiggles. */
-function Brain({ width: w, height: h }: { width: number; height: number }) {
-  return (
-    <Svg width={w} height={h} viewBox="0 0 100 60">
-      <Path
-        d="M8 52 C0 44 2 30 12 27 C10 15 24 7 34 13 C38 3 56 2 61 11 C70 4 86 9 86 21 C97 23 100 38 92 46 C93 56 82 60 72 57 L22 57 C14 59 8 57 8 52 Z"
-        fill={BRAIN}
-        stroke={BRAIN_SHADE}
-        strokeWidth={2.2}
-      />
-      <G fill="none" stroke={BRAIN_SHADE} strokeWidth={2} strokeLinecap="round">
-        <Path d="M50 12 C46 22 54 30 49 40 C46 47 52 52 50 56" />
-        <Path d="M22 30 C28 26 32 34 38 30" />
-        <Path d="M20 44 C26 40 30 47 37 43" />
-        <Path d="M62 26 C68 22 72 30 78 26" />
-        <Path d="M64 42 C70 38 75 45 82 41" />
-      </G>
-      <Ellipse cx={30} cy={20} rx={7} ry={3.5} fill="#FFFFFF" opacity={0.45} />
-    </Svg>
-  );
-}
-
-/** A little paper shredder with a face: a lid with the slot, a round body, a zigzag of teeth at the bottom. */
-function Shredder({ width: w, height: h, body, lid, rim }: { width: number; height: number; body: string; lid: string; rim: string }) {
-  const lidH = h * 0.24;
-  const teeth = Array.from({ length: 12 }, (_, i) => {
-    const x0 = w * 0.12 + ((w * 0.76) / 12) * i;
-    const x1 = x0 + (w * 0.76) / 24;
-    const x2 = x0 + (w * 0.76) / 12;
-    return `L ${x1} ${h * 0.98} L ${x2} ${h * 0.92}`;
-  }).join(' ');
-  return (
-    <Svg width={w} height={h}>
-      {/* Body */}
-      <Path d={`M ${w * 0.08} ${lidH} L ${w * 0.92} ${lidH} L ${w * 0.88} ${h * 0.92} ${teeth} L ${w * 0.12} ${h * 0.92} Z`} fill={body} stroke={withAlpha(FACE, 0.35)} strokeWidth={1.5} strokeLinejoin="round" />
-      {/* Lid with the slot */}
-      <Rect x={w * 0.02} y={0} width={w * 0.96} height={lidH} rx={lidH * 0.4} fill={lid} stroke={withAlpha(FACE, 0.35)} strokeWidth={1.5} />
-      <Rect x={w * 0.1} y={h * 0.1 - h * 0.025} width={w * 0.8} height={h * 0.05} rx={h * 0.025} fill={SLOT} />
-      {/* Stitch line, like the bar */}
-      <Rect x={w * 0.13} y={lidH + h * 0.06} width={w * 0.74} height={h * 0.56} rx={h * 0.08} fill="none" stroke={withAlpha(rim, 0.6)} strokeWidth={1.4} strokeDasharray="5 4" />
-      {/* Face */}
-      <Circle cx={w * 0.38} cy={h * 0.5} r={h * 0.045} fill={FACE} />
-      <Circle cx={w * 0.62} cy={h * 0.5} r={h * 0.045} fill={FACE} />
-      <Circle cx={w * 0.39} cy={h * 0.485} r={h * 0.015} fill="#FFFFFF" />
-      <Circle cx={w * 0.63} cy={h * 0.485} r={h * 0.015} fill="#FFFFFF" />
-      <Ellipse cx={w * 0.29} cy={h * 0.6} rx={h * 0.06} ry={h * 0.035} fill={CHEEK} opacity={0.75} />
-      <Ellipse cx={w * 0.71} cy={h * 0.6} rx={h * 0.06} ry={h * 0.035} fill={CHEEK} opacity={0.75} />
-      <Path d={`M ${w * 0.45} ${h * 0.6} Q ${w * 0.5} ${h * 0.68} ${w * 0.55} ${h * 0.6}`} fill="none" stroke={FACE} strokeWidth={2} strokeLinecap="round" />
-    </Svg>
-  );
-}
-
-/** One shredded strip: slides out from behind the shredder, falls a little, curls and fades. */
-function Strip({ index, t, left, top, width, length, paper, line }: { index: number; t: SharedValue<number>; left: number; top: number; width: number; length: number; paper: string; line: string }) {
-  const start = T.strips + index * T.stripGap;
-  const style = useAnimatedStyle(() => {
-    const p = interpolate(t.get(), [start, start + T.stripMs], [0, 1], Extrapolation.CLAMP);
-    const out = Easing.out(Easing.quad)(p);
-    return {
-      opacity: interpolate(p, [0, 0.05, 0.75, 1], [0, 1, 1, 0], Extrapolation.CLAMP),
-      transform: [
-        { translateY: out * length * 1.7 },
-        { rotate: `${Math.sin(p * 6 + index) * 7 * p}deg` },
-      ],
-    };
-  });
-  return (
-    <Animated.View style={[{ position: 'absolute', left, top, width, height: length, backgroundColor: paper, borderRadius: 2, overflow: 'hidden' }, style]}>
-      {[0.2, 0.45, 0.7].map((y) => (
-        <View key={y} style={{ position: 'absolute', left: 1, right: 1, top: length * y, height: 1.5, backgroundColor: line }} />
-      ))}
-    </Animated.View>
   );
 }

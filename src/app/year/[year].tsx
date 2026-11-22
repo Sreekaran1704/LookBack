@@ -2,56 +2,67 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { memo, useEffect, useMemo, useRef, useState, type ComponentRef } from 'react';
 import { ScrollView, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 import Animated, {
+  Easing,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
-  withDelay,
   withSpring,
   withTiming,
   type SharedValue,
 } from 'react-native-reanimated';
-import { ActionBar, HAND_TAIL, PageFooter, PageHeader, usePageContentStyle } from '../../components/Screen';
+import { GiltRule, HAND_TAIL, PageFooter, PageHeader, usePageContentStyle } from '../../components/Screen';
 import { LiteShadows } from '../../components/ThemeProvider';
 import { BuddySays } from '../../components/scrapbook/Buddy';
-import { Doodle } from '../../components/scrapbook/Doodle';
 import { PaperBackground } from '../../components/scrapbook/PaperBackground';
 import { Raster } from '../../components/scrapbook/Raster';
 import { ScrapObject } from '../../components/scrapbook/ScrapObject';
-import { deg } from '../../components/scrapbook/shared';
-import { Sticker } from '../../components/scrapbook/Sticker';
-import type { Entry } from '../../data';
+import { resolvePhotoUri, type Entry } from '../../data';
+import { DiaryDock } from '../../components/DiaryDock';
+import { MemoryLine, MemoryPeg } from '../../components/scrapbook/MemoryLine';
+import { Polaroid } from '../../components/scrapbook/Polaroid';
+import { formatMonthDay } from '../../lib/dates';
+import { PressableScale } from '../../components/PressableScale';
 import { useYearEntries } from '../../hooks/useData';
 import { useAfterTransition } from '../../hooks/useAfterTransition';
 import { useBookFlight } from '../../components/BookFlight';
 import { tapHaptic } from '../../lib/haptics';
-import { hashString, lookForEntry, STICKERS } from '../../lib/seeded';
+import { hashString, lookForEntry } from '../../lib/seeded';
 import { groupByMonth, monthName, scatterLayout, tidyLayout, type Slot } from '../../lib/yearSpread';
 import { useTheme, type YearPalette } from '../../theme';
 
 /** Height of a tidy cell relative to its width: fits a polaroid with its caption. */
 const CELL_RATIO = 1.3;
+/** A note's height in the tidy rows: a heading line plus up to TIDY_NOTE_LINES of words (about this many letters each). */
+const NOTE_BASE = 0.42;
+const NOTE_LINE = 0.08;
+const NOTE_LINE_CHARS = 20;
+
+/** How tall a memory hangs in the tidy rows: a polaroid (photo or voice) takes the whole cell, a note only its lines. */
+function tidyHeight(entry: Entry, itemW: number, cellH: number): number {
+  if (entry.photoPath || entry.voicePath) return cellH;
+  const lines = Math.min(TIDY_NOTE_LINES, Math.max(1, Math.ceil(entry.text.trim().length / NOTE_LINE_CHARS)));
+  return Math.min(cellH, itemW * (NOTE_BASE + NOTE_LINE * lines));
+}
 const TIDY_NOTE_LINES = 5;
-/** Drawn during the slide-in; the rest of the pile follows once the screen has arrived. */
-const FIRST_PAINT = 4;
-/** The rest of the pile stacks on within about this long, however many there are. */
-/** After the slide-in, this many more pieces join the pile every STACK_TICK_MS (each falls as it joins). */
-const STACK_BATCH = 1;
-/**
- * Only memories within this many screen heights of what is visible are built, like a chat list: a
- * year can hold hundreds, but only a screenful or two is ever drawn. More are built as you scroll.
- */
-const WINDOW_SCREENS = 1;
-/** After the stack-up: how often the built area grows by a screen (in both directions). */
-const PREFETCH_TICK_MS = 140;
-/** Scroll position is tracked in steps this tall, so scrolling re-renders only now and then. */
+/** Prepare the finished drawings under the opening cover, with a bounded render window. */
+const PREPARE_BATCH = 2;
+const PREPARE_TICK_MS = 32;
 const WINDOW_STEP = 240;
-/** How long after the pile has stacked up before the (hidden) month headings are built. */
-const HEADERS_AFTER_MS = 600;
-const STACK_TICK_MS = 55;
-/** Where a stacking piece starts falling from, above its spot. */
-const STACK_DROP_PX = 520;
-/** Objects are laid out this much larger than their cell and scaled down, so the handwriting, tape and stickers shrink with them. */
+const WINDOW_SCREENS = 1;
 const MINIATURE = 1.7;
+/**
+ * The pile stacks up one memory at a time, bottom of the pile first: each gets its turn STACK_STEP_MS after the one under
+ * it and takes FALL_MS to fall, turn and settle with a soft overshoot. One UI-thread clock (in ms) drives them all, so no
+ * work happens in React while it plays (the cards are already built and painted under the cover).
+ */
+const STACK_STEP_MS = 70;
+const FALL_MS = 460;
+/** How far past "landed" the settle overshoots (0 = none). Soft: a paper dropping, not a ball. */
+const SETTLE_OVERSHOOT = 0.9;
+const SCATTER_DROP_PX = 520;
+/** The clock once the stack-up is over: far past every turn, so memories scrolled into view later are simply there. */
+const LANDED = 1e9;
+const EMPTY_ENTRIES: Entry[] = [];
 
 /**
  * A year, opened: every entry thrown on the page in a loose pile. "Tidy up" slides each one into
@@ -64,63 +75,35 @@ export default function YearScreen() {
   const { spacing, scrap, typography, motion } = theme;
   const palette = theme.year(year);
   const { width } = useWindowDimensions();
-  const { data: entries = [] } = useYearEntries(year);
+  const { data: loadedEntries } = useYearEntries(year);
+  const entries = loadedEntries ?? EMPTY_ENTRIES;
   const reduceMotion = useReducedMotion();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const [tidy, setTidy] = useState(false);
-  /**
-   * The month headings only show once tidied, but drawing all of them (a sticker each) took ~65 ms, right as the
-   * diary handed over to this page. So they are built quietly after the pile has stacked up, or on the first Tidy up.
-   */
-  const [headersReady, setHeadersReady] = useState(false);
   const progress = useSharedValue(0);
+  // One UI-thread clock reveals already-drawn cards; React does no work during their entrance.
+  const entrance = useSharedValue(0);
   const transitioned = useAfterTransition(motion.screenMs + 80);
-  // Opened from the shelf: the book and paper cover this screen until it has drawn; the memories only
-  // stack on once they are gone, so you see them land.
   const { ready, flying } = useBookFlight();
   const arrived = transitioned && flying !== year;
   const [drawn, setDrawn] = useState(false);
-  useEffect(() => {
-    if (!drawn) return;
-    const frame = requestAnimationFrame(() => ready(year));
-    return () => cancelAnimationFrame(frame);
-  }, [drawn, ready, year]);
-  // How many of the pile are mounted. Mounting a few per tick (instead of all at once) keeps every
-  // frame light; each newcomer falls onto the pile as it arrives, so the pile visibly stacks up.
-  // Opened from the shelf, the page loads hidden under the book: keep that load light (no memories
-  // yet) and let the whole pile stack on after the reveal.
-  const [initialShown] = useState(() => (flying === year ? 0 : FIRST_PAINT));
-  const [shown, setShown] = useState(initialShown);
+  const [shown, setShown] = useState(0);
+  const [revealed, setRevealed] = useState(false);
   const [windowTop, setWindowTop] = useState(0);
-  // Once the pile has landed, the page keeps building further ahead (one more screen every PREFETCH_TICK_MS)
-  // until everything exists, so scrolling later only moves memories instead of building them mid-scroll.
-  const [ahead, setAhead] = useState(WINDOW_SCREENS);
   const [pileTop, setPileTop] = useState(0);
   const { height: screenH } = useWindowDimensions();
-  // The month headings, once the pile has stacked up (see headersReady).
-  const stacked = arrived && shown >= entries.length;
-  useEffect(() => {
-    if (!stacked || headersReady) return;
-    const timer = setTimeout(() => setHeadersReady(true), HEADERS_AFTER_MS);
-    return () => clearTimeout(timer);
-  }, [stacked, headersReady]);
-  useEffect(() => {
-    if (!arrived || shown >= entries.length) return;
-    const timer = setTimeout(() => setShown((n) => n + STACK_BATCH), STACK_TICK_MS);
-    return () => clearTimeout(timer);
-  }, [arrived, shown, entries.length]);
 
-  const contentW = width - spacing.gutter * 2;
-  const gap = spacing.md;
+  const contentW = width - spacing.xl * 2;
+  const gap = 18;
   const itemW = (contentW - gap * (scrap.tidyColumns - 1)) / scrap.tidyColumns;
   const cellH = itemW * CELL_RATIO;
-  const headerH = (typography.month.lineHeight ?? 0) + spacing.lg;
+  const headerH = (typography.month.lineHeight ?? 0) + spacing.sm + 12;
 
-  const { groups, items, scatterH, tidyH, headers } = useMemo(() => {
+  const { groups, items, scatterH, tidyH, headers, rowTops } = useMemo(() => {
     const months = groupByMonth(entries);
     const tidied = tidyLayout(
       months.map((g) => g.entries.map((e) => e.id)),
-      { itemW, cellH, columns: scrap.tidyColumns, gap, headerH, groupGap: spacing.xl, maxTilt: scrap.tidyTilt },
+      { itemW, cellH, columns: scrap.tidyColumns, gap, headerH, groupGap: spacing.md, maxTilt: scrap.tidyTilt, heights: months.map((g) => g.entries.map((e) => tidyHeight(e, itemW, cellH))) },
     );
     const flat = months.flatMap((g) => g.entries);
     // The pile is in a shuffled (but stable) order, so months are mixed up until it is tidied.
@@ -148,15 +131,50 @@ export default function YearScreen() {
       scatterH: scattered.height,
       tidyH: tidied.height,
       headers: tidied.headers,
+      rowTops: tidied.rowTops,
     };
-  }, [entries, itemW, cellH, contentW, gap, headerH, scrap, spacing.xl]);
+  }, [entries, itemW, cellH, contentW, gap, headerH, scrap, spacing.md]);
 
-  const fullyBuilt = screenH > 0 && ahead * screenH >= Math.max(scatterH, tidyH);
+  const visibleItems = useMemo(() => {
+    const top = windowTop - pileTop - screenH * WINDOW_SCREENS;
+    const bottom = windowTop - pileTop + screenH * (1 + WINDOW_SCREENS);
+    const near = (y: number) => y + cellH * 1.5 > top && y < bottom;
+    return items.filter(({ from, to }) => near(from.y) || near(to.y));
+  }, [items, windowTop, pileTop, screenH, cellH]);
+
+  // Each visible memory's turn in the stack-up: its place in the pile among those on screen (bottom first).
+  const turnOf = useMemo(() => {
+    const order = [...visibleItems].sort((a, b) => a.z - b.z);
+    return new Map(order.map((it, i) => [it.entry.id, i]));
+  }, [visibleItems]);
+  const stackMs = Math.max(0, visibleItems.length - 1) * STACK_STEP_MS + FALL_MS;
+
   useEffect(() => {
-    if (!arrived || shown < entries.length || fullyBuilt) return;
-    const timer = setTimeout(() => setAhead((a) => a + 1), PREFETCH_TICK_MS);
+    if (revealed || shown >= visibleItems.length || (flying !== year && !transitioned)) return;
+    const timer = setTimeout(() => setShown((n) => Math.min(visibleItems.length, n + PREPARE_BATCH)), PREPARE_TICK_MS);
     return () => clearTimeout(timer);
-  }, [arrived, shown, entries.length, ahead, fullyBuilt]);
+  }, [revealed, shown, visibleItems.length, flying, year, transitioned]);
+
+  // Hand over only once the finished visible cards have had a chance to lay out and paint.
+  useEffect(() => {
+    if (!drawn || loadedEntries === undefined || shown < visibleItems.length) return;
+    let second = 0;
+    const first = requestAnimationFrame(() => { second = requestAnimationFrame(() => ready(year)); });
+    return () => { cancelAnimationFrame(first); cancelAnimationFrame(second); };
+  }, [drawn, loadedEntries, shown, visibleItems.length, ready, year]);
+
+  useEffect(() => {
+    if (!arrived || revealed || loadedEntries === undefined || shown < visibleItems.length) return;
+    const frame = requestAnimationFrame(() => {
+      setRevealed(true);
+      entrance.set(
+        withTiming(stackMs, { duration: reduceMotion ? motion.imageFadeMs : stackMs, easing: Easing.linear }, (done) => {
+          if (done) entrance.set(LANDED);
+        }),
+      );
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [arrived, revealed, loadedEntries, shown, visibleItems.length, entrance, reduceMotion, motion.imageFadeMs, stackMs]);
 
   useEffect(() => {
     const target = tidy ? 1 : 0;
@@ -165,15 +183,27 @@ export default function YearScreen() {
 
   const toggle = () => {
     tapHaptic();
-    setHeadersReady(true);
     scroll.current?.scrollTo({ y: 0, animated: !reduceMotion });
+    if (tidy && !reduceMotion) {
+      // Scatter reuses the already-drawn cards: they stack up again, one at a time; only their transforms restart.
+      entrance.set(0);
+      entrance.set(
+        withTiming(stackMs, { duration: stackMs, easing: Easing.linear }, (done) => {
+          if (done) entrance.set(LANDED);
+        }),
+      );
+    } else {
+      // Tidying: everything is already landed.
+      entrance.set(LANDED);
+    }
     setTidy((t) => !t);
   };
   const pageContent = usePageContentStyle({ gap: false, thumbBar: true });
 
   return (
     <View style={{ flex: 1 }} onLayout={() => setDrawn(true)}>
-      <PaperBackground variant="dots" desk color={theme.dark ? undefined : palette.tint} />
+      {/* The volume's own leather: the cover, stained a little with the year's color. */}
+      <PaperBackground variant="dots" desk wash={palette.primary} />
       <ScrollView
         ref={scroll}
         style={{ flex: 1 }}
@@ -188,7 +218,7 @@ export default function YearScreen() {
           <PageHeader
             title={String(year)}
             count={entries.length}
-            subtitle={entries.length === 0 ? undefined : tidy ? 'sorted by month ✿' : 'all in one happy pile ✿'}
+            subtitle={entries.length === 0 ? undefined : tidy ? 'moments on a string, month by month' : 'every page, loose in the volume'}
             accent={palette.secondary}
             buddyAccent={palette.primary}
             buddy={entries.length > 0}
@@ -201,7 +231,7 @@ export default function YearScreen() {
         ) : (
           <LiteShadows>
           <View style={{ height: tidy ? tidyH : scatterH }} onLayout={(e) => setPileTop(e.nativeEvent.layout.y)}>
-            {(arrived && headersReady ? groups : []).map((group, i) => (
+            {groups.map((group, i) => (headers[i] ?? 0) + headerH > windowTop - pileTop - screenH && (headers[i] ?? 0) < windowTop - pileTop + screenH * 2 ? (
               <MonthHeader
                 key={group.month}
                 month={group.month}
@@ -210,40 +240,14 @@ export default function YearScreen() {
                 progress={progress}
                 palette={palette}
               />
+            ) : null)}
+            {groups.flatMap((group, i) => (rowTops[i] ?? []).map((rowTop, row) => rowTop > windowTop - pileTop - screenH && rowTop < windowTop - pileTop + screenH * 2 ? (
+              <MemoryLine key={`${group.month}-${row}`} width={contentW} top={rowTop} progress={progress} />
+            ) : null))}
+            {visibleItems.slice(0, revealed ? undefined : shown).map(({ entry, z, from, to }) => (
+              <SpreadItem key={entry.id} entry={entry} z={z} from={from} to={to} width={itemW} height={cellH}
+                progress={progress} entrance={entrance} entranceIndex={turnOf.get(entry.id) ?? 0} reduced={reduceMotion} near />
             ))}
-            {/* The bottom of the pile is there as the screen slides in; once it has arrived, the rest
-                drop on one by one, in stacking order, so the pile builds up. */}
-            {items
-              .filter(({ z, from, to }) => {
-                if (z >= shown) return false;
-                // Near the visible part of the page, in either the scattered or the tidy layout.
-                const top = windowTop - pileTop - screenH * ahead;
-                const bottom = windowTop - pileTop + screenH * (1 + ahead);
-                const near = (y: number) => y + cellH * 1.5 > top && y < bottom;
-                return near(from.y) || near(to.y);
-              })
-              .map(({ entry, z, from, to }) => {
-                // Within a screen of the visible area (in the layout being shown): kept as a picture.
-                const y = tidy ? to.y : from.y;
-                const viewTop = windowTop - pileTop - screenH;
-                const viewBottom = windowTop - pileTop + screenH * 2;
-                const close = y + cellH * 1.5 > viewTop && y < viewBottom;
-                return (
-                <SpreadItem
-                  key={entry.id}
-                  entry={entry}
-                  z={z}
-                  from={from}
-                  to={to}
-                  width={itemW}
-                  height={cellH}
-                  progress={progress}
-                  // Only the opening stack-up falls in; memories built later while scrolling are simply there.
-                  dropDelay={z < initialShown || reduceMotion || shown >= entries.length ? undefined : 0}
-                  near={close}
-                />
-                );
-              })}
           </View>
           </LiteShadows>
         )}
@@ -251,12 +255,11 @@ export default function YearScreen() {
       </ScrollView>
       {/* Back, at the foot where a thumb reaches it (Tidy up / Scatter is in the bar). */}
       {/* Inside a diary the page's own buttons replace the main bar: Back, and Tidy up / Scatter. */}
-      <ActionBar
-        withNavBar={false}
+      <DiaryDock
         actions={[
-          { key: 'back', icon: 'chevron-back', label: 'Back', tint: palette.primary, onPress: () => router.back() },
+          { key: 'back', icon: 'chevron-back', label: 'Back', onPress: () => router.back() },
           ...(entries.length > 1
-            ? [{ key: 'tidy', icon: tidy ? ('shuffle' as const) : ('albums-outline' as const), label: tidy ? 'Scatter' : 'Tidy up', tint: palette.primary, active: tidy, onPress: toggle }]
+            ? [{ key: 'tidy', icon: tidy ? ('shuffle' as const) : ('albums-outline' as const), label: tidy ? 'Scatter' : 'Tidy up', tint: theme.colors.giltBright, active: tidy, onPress: toggle }]
             : []),
         ]}
       />
@@ -273,38 +276,40 @@ interface SpreadItemProps {
   width: number;
   height: number;
   progress: SharedValue<number>;
-  /** Added after the slide-in: falls onto the pile after this many ms. Undefined = already in place. */
-  dropDelay?: number;
-  /** Close to what's on screen: kept as one ready-made picture, so a scroll repaints a texture, not every shape. */
   near: boolean;
+  entrance: SharedValue<number>;
+  entranceIndex: number;
+  reduced: boolean;
 }
 
-const SpreadItem = memo(function SpreadItem({ entry, z, from, to, width, height, progress, dropDelay, near }: SpreadItemProps) {
-  const { scrap, colors, radii, opacity, motion } = useTheme();
-  // The slot supplies the tilt, so the object itself is drawn straight.
+const SpreadItem = memo(function SpreadItem({ entry, z, from, to, width, height, progress, entrance, entranceIndex, reduced, near }: SpreadItemProps) {
+  const { scrap, colors, radii, opacity } = useTheme();
   const look = useMemo(() => ({ ...lookForEntry(entry, scrap.maxTilt, scrap.maxOffset), tilt: 0 }), [entry, scrap.maxTilt, scrap.maxOffset]);
-  const drop = useSharedValue(dropDelay === undefined ? 1 : 0);
-  useEffect(() => {
-    if (dropDelay === undefined) return;
-    drop.set(withDelay(dropDelay, withSpring(1, motion.drop)));
-  }, [drop, dropDelay, motion.drop]);
   const style = useAnimatedStyle(() => {
     const p = progress.get();
-    const d = drop.get();
+    const clock = entrance.get();
+    // This memory's own fall: it starts on its turn and lasts FALL_MS.
+    const t = Math.max(0, Math.min(1, (clock - entranceIndex * STACK_STEP_MS) / FALL_MS));
+    const fade = Math.min(1, t * 5);
+    // Falls fast, settles softly with a little overshoot (ease-out-back). At rest under the cover (clock 0) it is painted
+    // at its final place, so its picture is ready before the fall.
+    const u = t - 1;
+    const settle = 1 + (SETTLE_OVERSHOOT + 1) * u * u * u + SETTLE_OVERSHOOT * u * u;
+    const d = reduced || clock === 0 ? 1 : settle;
     return {
-      opacity: d > 0.001 ? 1 : 0,
+      opacity: reduced ? Math.max(0.001, fade) : clock === 0 ? 0.001 : fade,
       transform: [
         { translateX: from.x + (to.x - from.x) * p },
-        { translateY: from.y + (to.y - from.y) * p - (1 - d) * STACK_DROP_PX },
-        { rotate: `${from.rotate + (to.rotate - from.rotate) * p + (1 - d) * 24}deg` },
-        { scale: from.scale + (to.scale - from.scale) * p },
+        { translateY: from.y + (to.y - from.y) * p - (1 - d) * SCATTER_DROP_PX },
+        { rotate: `${from.rotate + (to.rotate - from.rotate) * p + (1 - d) * 18}deg` },
+        { scale: (from.scale + (to.scale - from.scale) * p) * (0.97 + Math.min(1, d) * 0.03) },
       ],
     };
   });
   return (
     <Animated.View style={[styles.item, { width, height, zIndex: z }, style]}>
       {/* The picture is taken outside the miniature's scale-down, so it is the size you see (about 1 MB),
-          not the 1.7× size the object is laid out at. Far-away memories stay plain drawings to save memory. */}
+          not the 1.7× size the object is laid out at. Offscreen memories are unmounted by the render window. */}
       <Raster enabled={near}>
       <View style={{ width, height }}>
       <View style={[styles.miniature, { width: width * MINIATURE, transform: [{ scale: 1 / MINIATURE }] }]}>
@@ -315,17 +320,17 @@ const SpreadItem = memo(function SpreadItem({ entry, z, from, to, width, height,
             { backgroundColor: colors.shadowBase, opacity: opacity.pileShadow, borderRadius: radii.paper * 2, transform: [{ translateX: 4 }, { translateY: 6 }] },
           ]}
         />
-        <ScrapObject
-          entry={entry}
-          look={look}
-          raster={false}
-          width={width * MINIATURE}
-          numberOfLines={TIDY_NOTE_LINES}
-          onPress={() => router.push(`/memory/${entry.id}`)}
-        />
+        {entry.photoPath ? (
+          <PressableScale onPress={() => router.push(`/memory/${entry.id}`)} accessibilityRole="button" accessibilityLabel={`Open memory from ${formatMonthDay(entry.localDate)}`}>
+            <Polaroid frontOnly width={width * MINIATURE} uri={resolvePhotoUri(entry.photoPath)} tint={colors.sepia} words={entry.text} date={formatMonthDay(entry.localDate)} />
+          </PressableScale>
+        ) : (
+          <ScrapObject entry={entry} look={look} raster={false} width={width * MINIATURE} numberOfLines={TIDY_NOTE_LINES} onPress={() => router.push(`/memory/${entry.id}`)} />
+        )}
       </View>
       </View>
       </Raster>
+      <MemoryPeg progress={progress} />
     </Animated.View>
   );
 });
@@ -338,48 +343,25 @@ interface MonthHeaderProps {
   palette: YearPalette;
 }
 
-/** Month heading for the tidy view: highlighted handwritten name, a count, and a sticker. Fades in as things settle. */
-function MonthHeader({ month, count, top, progress, palette }: MonthHeaderProps) {
-  const { colors, typography, spacing, sizes } = useTheme();
-  const [w, setW] = useState(0);
-  const lineH = typography.month.lineHeight ?? 0;
+/** Month heading for the tidy view: the month in gilt italic over a tooled gold rule, and its count. Fades in as things settle. */
+function MonthHeader({ month, count, top, progress }: MonthHeaderProps) {
+  const { colors, typography, spacing } = useTheme();
   const style = useAnimatedStyle(() => ({
     opacity: progress.get(),
     transform: [{ translateY: (1 - progress.get()) * -spacing.md }],
   }));
   return (
-    <Animated.View pointerEvents="none" style={[styles.month, { top, gap: spacing.sm }, style]}>
-      <View>
-        {w > 0 ? (
-          <Doodle
-            kind="highlight"
-            width={w + spacing.sm}
-            height={lineH}
-            color={month % 2 ? palette.secondary : palette.primary}
-            seed={month}
-            style={{ position: 'absolute', left: -spacing.xs, top: spacing.xs }}
-          />
-        ) : null}
-        <Text
-          onLayout={(e) => setW(e.nativeEvent.layout.width)}
-          numberOfLines={1}
-          textBreakStrategy="simple"
-          style={[typography.month, { color: colors.onDesk }]}
-        >
+    <Animated.View pointerEvents="none" style={[styles.month, { top, gap: spacing.xs }, style]}>
+      <View style={{ flexDirection: 'row', alignItems: 'baseline', gap: spacing.sm }}>
+        <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.month, { color: colors.giltBright }]}>
           {monthName(month)}
           {HAND_TAIL}
         </Text>
+        <Text numberOfLines={1} style={[typography.caption, { color: colors.onDeskMuted, flex: 1, textAlign: 'right' }]}>
+          {count} {count === 1 ? 'page' : 'pages'}
+        </Text>
       </View>
-      <Text numberOfLines={1} style={[typography.hand, { color: colors.onDeskMuted, flex: 1 }]}>
-        {count} {count === 1 ? 'memory' : 'memories'}
-      </Text>
-      <Sticker
-        kind={STICKERS[month % STICKERS.length] ?? 'star'}
-        size={sizes.stickerDecor}
-        color={palette.secondary}
-        color2={palette.primary}
-        style={{ transform: [{ rotate: deg(month % 2 ? 12 : -12) }] }}
-      />
+      <GiltRule />
     </Animated.View>
   );
 }
@@ -387,5 +369,5 @@ function MonthHeader({ month, count, top, progress, palette }: MonthHeaderProps)
 const styles = StyleSheet.create({
   item: { position: 'absolute', left: 0, top: 0 },
   miniature: { position: 'absolute', left: 0, top: 0, transformOrigin: 'top left' },
-  month: { position: 'absolute', left: 0, right: 0, flexDirection: 'row', alignItems: 'center' },
+  month: { position: 'absolute', left: 0, right: 0 },
 });

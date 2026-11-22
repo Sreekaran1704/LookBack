@@ -5,6 +5,8 @@ import type { VoicePlayer } from '../components/scrapbook/Waveform';
 
 /** How often the player reports where it is (ms); the waveform eases between reports. */
 const UPDATE_MS = 100;
+/** How long the reels take to wind back to the start on STOP / REWIND. */
+const REWIND_MS = 600;
 
 /**
  * Plays one voice note (a file:// URI, or null for none). Returns what the waveform needs: how far
@@ -38,6 +40,14 @@ export function useVoicePlayback(uri: string | null): VoicePlayer | undefined {
   return {
     progress,
     playing: status.playing,
+    ready: status.isLoaded,
+    positionMs: status.currentTime * 1000,
+    durationMs: status.duration * 1000,
+    stop: () => {
+      player.pause();
+      player.seekTo(0).catch(() => undefined);
+      progress.set(withTiming(0, { duration: REWIND_MS }));
+    },
     toggle: () => {
       if (status.playing) {
         player.pause();

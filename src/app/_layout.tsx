@@ -1,4 +1,6 @@
 import { Caveat_500Medium, Caveat_600SemiBold, Caveat_700Bold } from '@expo-google-fonts/caveat';
+import { CormorantGaramond_600SemiBold, CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
+import { IMFellEnglish_400Regular, IMFellEnglish_400Regular_Italic } from '@expo-google-fonts/im-fell-english';
 import { useFonts } from 'expo-font';
 import * as Notifications from 'expo-notifications';
 import { router, Stack } from 'expo-router';
@@ -11,6 +13,7 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BookFlightProvider } from '../components/BookFlight';
+import { GiftArrival } from '../components/GiftArrival';
 import { Intro } from '../components/Intro';
 import { NavBar, NavBarProvider } from '../components/NavBar';
 import { preloadBuddy } from '../components/scrapbook/Buddy';
@@ -18,6 +21,7 @@ import { StatusPillProvider } from '../components/StatusPill';
 import { preloadLook, ThemeProvider } from '../components/ThemeProvider';
 import { syncAppIcon } from '../device/appIcon';
 import { backupRepository, entriesRepository, settingsRepository } from '../data';
+import { startPostman } from '../data/social/postman';
 import { preloadEntries, useAllEntries, useToday } from '../hooks/useData';
 import { configureNotifications, refreshReminders } from '../notifications/scheduler';
 import { useTheme } from '../theme';
@@ -46,6 +50,10 @@ export default function RootLayout() {
     Caveat_500Medium,
     Caveat_600SemiBold,
     Caveat_700Bold,
+    CormorantGaramond_600SemiBold,
+    CormorantGaramond_600SemiBold_Italic,
+    IMFellEnglish_400Regular,
+    IMFellEnglish_400Regular_Italic,
   });
   const [ready, setReady] = useState(false);
   const [startupError, setStartupError] = useState<string | null>(null);
@@ -63,6 +71,8 @@ export default function RootLayout() {
         setTimeout(() => {
           refresh();
           backupRepository.syncIfDue(); // quiet daily backup when connected; never throws
+          // Open your inbox, so people can give you pages (and pages waiting for them can go).
+          startPostman().catch(() => undefined);
         }, DEFER_STARTUP_WORK_MS);
       } catch (error) {
         if (!cancelled) setStartupError(error instanceof Error ? error.message : String(error));
@@ -83,6 +93,13 @@ export default function RootLayout() {
     const tapped = Notifications.addNotificationResponseReceivedListener((response) => {
       const kind = response.notification.request.content.data?.kind;
       if (kind === 'memory' || kind === 'test') router.navigate('/');
+      // Someone has a page for you: open Shared, where it arrives (LookBack coming online fetches it from their phone).
+      else if (kind === 'page-offer') router.navigate('/shared');
+      // A page that came in while LookBack was in the background: open it.
+      else if (kind === 'page-kept') {
+        const gift = response.notification.request.content.data?.gift;
+        if (typeof gift === 'string') router.push(`/letter/${gift}`);
+      }
     });
     const unsubEntries = entriesRepository.subscribe(() => {
       refresh();
@@ -164,6 +181,7 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
     <StatusPillProvider>
       <BookFlightProvider>
       <NavBarProvider>
+      {/* Dark icons on the pale day cover, light ones at night. */}
       <StatusBar style={theme.dark ? 'light' : 'dark'} />
       <Stack
         screenOptions={{
@@ -175,12 +193,17 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
         }}
       >
         <Stack.Screen name="(tabs)" />
-        <Stack.Screen name="entry" options={{ presentation: 'modal', animation: 'slide_from_bottom' }} />
+        {/* Pages you open into are transparent modals: they look and move exactly like a push, but Android keeps the
+            pages underneath attached, so going back shows Home as it was instead of repainting it (a 270 ms frame). */}
+        <Stack.Screen name="entry" options={{ presentation: 'transparentModal', animation: 'slide_from_bottom' }} />
+        <Stack.Screen name="memory/[id]" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
         {/* Opens hidden under the diary's page (BookFlight), which then fades away; going back fades too. */}
-        <Stack.Screen name="year/[year]" options={{ animation: 'fade', animationDuration: 1 }} />
+        <Stack.Screen name="year/[year]" options={{ presentation: 'transparentModal', animation: 'fade', animationDuration: 1 }} />
         <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
+        <Stack.Screen name="settings" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
       </Stack>
       <NavBar />
+      <GiftArrival />
       </NavBarProvider>
       {fadeFrom ? (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: fadeFrom }, fadeStyle]} />

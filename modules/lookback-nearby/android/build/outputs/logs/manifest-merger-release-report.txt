@@ -1,0 +1,50 @@
+-- Merging decision tree log ---
+manifest
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:1:1-10:12
+INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:1:1-10:12
+	package
+		INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml
+	xmlns:android
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:1:11-69
+uses-permission#android.permission.BLUETOOTH_SCAN
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:3:3-118
+	android:usesPermissionFlags
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:3:69-115
+	android:name
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:3:20-68
+uses-permission#android.permission.BLUETOOTH_ADVERTISE
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:4:3-76
+	android:name
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:4:20-73
+uses-permission#android.permission.BLUETOOTH
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:6:3-93
+	android:maxSdkVersion
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:6:64-90
+	android:name
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:6:20-63
+uses-permission#android.permission.BLUETOOTH_ADMIN
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:7:3-99
+	android:maxSdkVersion
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:7:70-96
+	android:name
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:7:20-69
+uses-permission#android.permission.ACCESS_FINE_LOCATION
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:8:3-104
+	android:maxSdkVersion
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:8:75-101
+	android:name
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:8:20-74
+uses-feature#android.hardware.bluetooth_le
+ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:9:3-89
+	android:required
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:9:62-86
+	android:name
+		ADDED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml:9:17-61
+uses-sdk
+INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml reason: use-sdk injection requested
+INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml
+INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml
+	android:targetSdkVersion
+		INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml
+	android:minSdkVersion
+		INJECTED from /Users/sreekaran1704/Documents/LookBack/modules/lookback-nearby/android/src/main/AndroidManifest.xml

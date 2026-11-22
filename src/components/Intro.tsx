@@ -1,330 +1,277 @@
+import { useAudioPlayer, type AudioPlayer } from 'expo-audio';
+import { Image } from 'expo-image';
 import * as SplashScreen from 'expo-splash-screen';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
-import Animated, {
-  Easing,
-  runOnJS,
-  useAnimatedStyle,
-  useReducedMotion,
-  useSharedValue,
-  withDelay,
-  withSpring,
-  withTiming,
-  type SharedValue,
-} from 'react-native-reanimated';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import type { Entry } from '../data';
-import { tapHaptic } from '../lib/haptics';
-import { seededRng } from '../lib/seeded';
-import { paletteByName, useTheme } from '../theme';
-import { Buddy, type BuddyMood } from './scrapbook/Buddy';
-import { Doodle } from './scrapbook/Doodle';
-import { ScrapObject } from './scrapbook/ScrapObject';
-import { WashiTape } from './scrapbook/WashiTape';
-import { LiteShadows } from './ThemeProvider';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Pressable, StyleSheet, Text, useWindowDimensions } from 'react-native';
+import Animated, { Easing, runOnJS, useAnimatedStyle, useReducedMotion, useSharedValue, withDelay, withTiming, type SharedValue } from 'react-native-reanimated';
+import { resolvePhotoUri, type Entry } from '../data';
+import { tapHaptic, thudHaptic } from '../lib/haptics';
+import { useTheme, withAlpha } from '../theme';
+import { Cassette } from './scrapbook/Cassette';
 
 interface Props {
-  /** Recent memories to rain down; placeholder notes fill in when there are few. */
+  /** The memories that fast-forward through the tape (newest first). */
   entries: Entry[];
   today: string;
   onDone: () => void;
 }
 
-/** Same width as the splash image (app.json → expo-splash-screen → imageWidth), so the hand-off is seamless. */
-const SPLASH_IMAGE_W = 180;
-/** The splash bunny's bow (scripts/make-icons.mjs uses coral); the intro bunny wears the same one. */
-const SPLASH_BOW = paletteByName('coral')?.primary;
-/** Pieces across one row of the heap, and how much of a piece's width each row adds to the heap's height. */
-const COLUMNS = 3;
-const ROW_PITCH = 0.74;
-const CARD_RATIO = 0.47;
-/** How many land right on the bunny, in front of it. */
-const ON_HEAD = 2;
-const MAX_PIECES = 22;
-const PLACEHOLDERS = [
-  'a small good thing',
-  '"keep going"',
-  'sunny walk',
-  'tea with mum',
-  'first snow',
-  'new notebook',
-  'late-night pizza',
-  'beach day',
-  'road trip',
-  '"be here now"',
-  'picnic',
-  'rainy window',
-];
+/** The splash's background (app.json → expo-splash-screen → backgroundColor), so nothing jumps when it hides. */
+const SPLASH_BG = '#0B0B0C';
+/** The cassette, as a share of the screen's width. */
+const CASSETTE_SHARE = 0.74;
 
-interface Piece {
-  entry: Entry;
-  width: number;
-  inFront: boolean;
-  startX: number;
-  endX: number;
-  endY: number;
-  startRot: number;
-  endRot: number;
-  delay: number;
+/** The beats: the tile becomes the cassette, the motor starts, memories fast-forward through it, it opens up. */
+const MORPH_MS = 260;
+const PLAY_AT_MS = 200;
+const BLOOM_AT_MS = 260;
+const BLOOM_MS = 1500;
+const BLOOM_STAGGER_MS = 140;
+const REEL_AT_MS = 420;
+const REEL_MS = 1500;
+const OPEN_AT_MS = REEL_AT_MS + REEL_MS + 60;
+const OPEN_MS = 560;
+/** How many memories go through, and how fast the first and last pass (they speed up, like fast-forward). */
+const MAX_CHIPS = 14;
+const FIRST_PASS_MS = 620;
+const LAST_PASS_MS = 170;
+const CHIP_W = 64;
+
+/** Sounds: the motor starting with the tape squealing over the head, and the squeal as it runs out. */
+const SCREECH_START = require('../../assets/sounds/tape-screech-start.wav');
+const SCREECH_END = require('../../assets/sounds/tape-screech-end.wav');
+const MOTOR_START = require('../../assets/sounds/tape-start.wav');
+const SOUND_VOLUME = 0.5;
+
+function play(player: AudioPlayer) {
+  player.seekTo(0).then(() => player.play()).catch(() => undefined);
+}
+function setVolume(player: AudioPlayer, volume: number) {
+  player.volume = volume;
+}
+
+interface Chip {
+  key: string;
+  uri: string | null;
+  words: string;
+  start: number;
+  dur: number;
+  dy: number;
+  tilt: number;
 }
 
 /**
- * The startup animation. The native splash shows the bunny; this takes over in the same spot, the
- * bunny hops down to the bottom of the screen, then memories rain down and pile up from the floor to
- * the top of the screen, burying everything but the bunny (two land right on its head; it squashes at
- * landings). The name appears on a taped label, and the whole sheet lifts away to the home screen,
- * which has been rendering underneath the whole time. Tap to skip. With "reduce motion" it is a fade.
+ * The startup moment, built around the diary's cassette. The native splash is only the dark background, so the app opens
+ * straight into this: the cassette comes up out of the dark. Its motor starts with a squeal of tape, its reels turn, and
+ * watercolour washes bloom out behind it in the paper's colours and the years' colours. Then your memories fast-forward
+ * through it, photos and first lines going in one side and out the other, faster and faster, until it runs out with a
+ * squeal and opens up, the colour spreading, onto the home page that has been rendering underneath. Tap to skip; with
+ * "reduce motion" it is a short fade.
  */
-export function Intro({ entries, today, onDone }: Props) {
+export function Intro({ entries, onDone }: Props) {
   const theme = useTheme();
-  const { colors, typography, spacing, motion, sizes, radii } = theme;
+  const { colors, typography, spacing } = theme;
   const { width: W, height: H } = useWindowDimensions();
-  const insets = useSafeAreaInsets();
   const reduceMotion = useReducedMotion();
-  const [mood, setMood] = useState<BuddyMood>('happy');
-  const [bump, setBump] = useState(0);
-  const [titleW, setTitleW] = useState(0);
-  /** Starts the show once the bunny is on screen; the memories are only mounted then, so the splash hides at once. */
   const [armed, setArmed] = useState(false);
+  const [spinning, setSpinning] = useState(false);
   const exit = useSharedValue(0);
-  const title = useSharedValue(0);
-  /** 0 = in the middle (where the splash left it), 1 = sitting at the bottom of the screen. */
-  const descend = useSharedValue(0);
+  const morph = useSharedValue(0);
+  const reel = useSharedValue(0);
+  const open = useSharedValue(0);
+  const blooms = useSharedValue(0);
   const leaving = useRef(false);
   const timers = useRef<ReturnType<typeof setTimeout>[]>([]);
+  const screechStart = useAudioPlayer(SCREECH_START);
+  const screechEnd = useAudioPlayer(SCREECH_END);
+  const motor = useAudioPlayer(MOTOR_START);
+  useEffect(() => {
+    [screechStart, screechEnd, motor].forEach((p) => setVolume(p, SOUND_VOLUME));
+  }, [screechStart, screechEnd, motor]);
 
-  const bunnyW = SPLASH_IMAGE_W * (1000 / 1024);
-  const bunnyX = (W - bunnyW) / 2;
-  const bunnyY0 = (H - bunnyW) / 2;
-  // Where it settles: at the foot of the screen, just above the gesture bar.
-  const bunnyY = H - insets.bottom - spacing.xl - bunnyW;
-  const cardW = W * CARD_RATIO;
+  const cassW = W * CASSETTE_SHARE;
+  const cassH = cassW * 0.63;
+  const cx = W / 2;
+  const cy = H / 2;
+  // The tape's line through the cassette: the middle of its window.
+  const tapeY = cy - cassH / 2 + cassH * 0.49;
 
-  // The heap: rows of pieces from the floor to the top of the screen, every slot jittered and tilted
-  // (seeded, so it is the same every launch). Bottom rows land first, so it builds upwards.
-  const pieces = useMemo((): Piece[] => {
-    const pitch = cardW * ROW_PITCH;
-    const rows = Math.ceil(H / pitch) + 1;
-    const behind = Math.min(MAX_PIECES - ON_HEAD, rows * COLUMNS);
-    const total = behind + ON_HEAD;
-    const real = entries.slice(0, total);
-    const all = [
-      ...real,
-      ...Array.from({ length: total - real.length }, (_, i): Entry => ({
-        id: `intro-${i}`,
-        localDate: today,
-        text: PLACEHOLDERS[i % PLACEHOLDERS.length] ?? '',
-        photoPath: null,
-        createdAt: today,
-        updatedAt: today,
-        objectType: null,
-        tapePattern: null,
-        sticker: null,
-        stickerColor: null,
-        tapeColor: null,
-    voicePath: null,
-    voiceWave: null,
-    voiceMs: null,
-      })),
-    ];
-    const stagger = motion.introRainMs / total;
-    return all.map((entry, i) => {
-      const rng = seededRng(`intro-${entry.id}-${i}`);
-      const inFront = i >= behind;
-      const width = inFront ? cardW * 0.6 : cardW * rng.range(0.85, 1.1);
-      let endX: number;
-      let endY: number;
-      if (inFront) {
-        // On its head, the second on top of the first.
-        endX = W / 2 + (i === behind ? -0.12 : 0.14) * bunnyW;
-        endY = bunnyY - width * (0.5 + (i - behind) * 0.28);
-      } else {
-        const row = Math.floor(i / COLUMNS);
-        const col = row % 2 === 0 ? i % COLUMNS : COLUMNS - 1 - (i % COLUMNS);
-        endX = ((col + 0.5) / COLUMNS) * W + rng.range(-0.18, 0.18) * cardW;
-        // Row 0 rests on the floor; each row above sits a little higher.
-        endY = H - insets.bottom - width * 1.05 - row * pitch + rng.range(-0.12, 0.12) * width;
-      }
-      return {
-        entry,
-        width,
-        inFront,
-        startX: endX + rng.range(-0.6, 0.6) * cardW,
-        endX,
-        endY,
-        startRot: rng.range(-60, 60),
-        endRot: rng.range(-16, 16),
-        delay: motion.introFirstDropMs + i * stagger,
-      };
-    });
-  }, [entries, today, W, H, insets.bottom, bunnyW, bunnyY, cardW, motion.introFirstDropMs, motion.introRainMs]);
+  // The memories, newest first; photos as little prints, words as slips. With none yet, blank slips go through.
+  const chips: Chip[] = useMemo(() => {
+    const source = entries.slice(0, MAX_CHIPS);
+    const n = Math.max(source.length, 8);
+    const list: Chip[] = [];
+    for (let i = 0; i < n; i++) {
+      const e = source[i];
+      const k = n > 1 ? i / (n - 1) : 0;
+      const dur = FIRST_PASS_MS + (LAST_PASS_MS - FIRST_PASS_MS) * k;
+      const prev = list[i - 1];
+      const start = prev ? prev.start + prev.dur * 0.42 : 0;
+      list.push({ key: e?.id ?? `blank-${i}`, uri: e?.photoPath ? resolvePhotoUri(e.photoPath) : null, words: e?.text.trim().split('\n')[0]?.slice(0, 28) ?? '', start, dur, dy: ((i * 37) % 11) - 5, tilt: ((i * 53) % 13) - 6 });
+    }
+    return list;
+  }, [entries]);
+
+  // Watercolour: soft blooms in the paper's two accents and this and recent years' colours.
+  const bloomColors = useMemo(() => {
+    const y = new Date().getFullYear();
+    return [theme.paper.dots, theme.year(y).primary, theme.paper.accent2, theme.year(y - 1).primary, theme.year(y - 2).primary, theme.paper.dots];
+  }, [theme]);
 
   const finish = useCallback(() => onDone(), [onDone]);
-  const leave = useCallback(() => {
-    if (leaving.current) return;
-    leaving.current = true;
-    timers.current.forEach(clearTimeout);
-    exit.set(
-      withTiming(1, { duration: motion.introExitMs, easing: Easing.out(Easing.cubic) }, (done) => {
-        if (done) runOnJS(finish)();
-      }),
-    );
-  }, [exit, finish, motion.introExitMs]);
+  const leave = useCallback(
+    (fast = false) => {
+      if (leaving.current) return;
+      leaving.current = true;
+      timers.current.forEach(clearTimeout);
+      exit.set(
+        withTiming(1, { duration: fast ? 220 : OPEN_MS, easing: Easing.out(Easing.cubic) }, (done) => {
+          if (done) runOnJS(finish)();
+        }),
+      );
+    },
+    [exit, finish],
+  );
 
-  // Hide the native splash once the same bunny, in the same place, is actually on screen.
+  // The native splash is only the dark background, the same as this one: hide it as soon as this is on screen and start.
   const onShown = useCallback(() => {
     SplashScreen.hideAsync().catch(() => undefined);
     setArmed(true);
   }, []);
-
-  // Safety net: never leave the splash up if the picture's callback doesn't come.
   useEffect(() => {
-    const timer = setTimeout(onShown, motion.introSplashFallbackMs);
-    return () => clearTimeout(timer);
-  }, [onShown, motion.introSplashFallbackMs]);
+    const frame = requestAnimationFrame(onShown);
+    return () => cancelAnimationFrame(frame);
+  }, [onShown]);
 
   useEffect(() => {
     if (!armed) return;
     const at = (ms: number, fn: () => void) => timers.current.push(setTimeout(fn, ms));
     if (reduceMotion) {
-      descend.set(1);
-      title.set(withTiming(1, { duration: motion.imageFadeMs }));
-      at(motion.introReducedHoldMs, leave);
+      morph.set(withTiming(1, { duration: theme.motion.imageFadeMs }));
+      at(theme.motion.introReducedHoldMs, () => leave());
     } else {
-      // Hop down to the bottom of the screen and land with a bounce.
-      descend.set(withDelay(motion.introDescendDelayMs, withSpring(1, motion.drop)));
-      at(motion.introDescendDelayMs + motion.drop.duration * 0.7, () => setBump((b) => b + 1));
-      // It squashes as things land on and around it (every few, so it doesn't jitter).
-      pieces.forEach((p, i) => {
-        if (p.inFront || i % 4 === 0) at(p.delay + motion.introFallMs * 0.8, () => setBump((b) => b + 1));
+      morph.set(withTiming(1, { duration: MORPH_MS, easing: Easing.out(Easing.cubic) }));
+      at(PLAY_AT_MS, () => {
+        thudHaptic();
+        play(motor);
+        play(screechStart);
+        setSpinning(true);
       });
-      const landed = (pieces[pieces.length - 1]?.delay ?? 0) + motion.introFallMs;
-      at(landed, () => {
-        setMood('cheer');
-        title.set(withSpring(1, motion.pop));
+      blooms.set(withDelay(BLOOM_AT_MS, withTiming(1, { duration: BLOOM_MS, easing: Easing.out(Easing.quad) })));
+      reel.set(withDelay(REEL_AT_MS, withTiming(1, { duration: REEL_MS, easing: Easing.linear })));
+      at(OPEN_AT_MS, () => {
+        play(screechEnd);
+        setSpinning(false);
       });
-      at(landed + motion.introHoldMs, leave);
+      open.set(withDelay(OPEN_AT_MS, withTiming(1, { duration: OPEN_MS, easing: Easing.in(Easing.cubic) })));
+      at(OPEN_AT_MS + OPEN_MS * 0.55, () => leave());
     }
     const pending = timers.current;
     return () => pending.forEach(clearTimeout);
-  }, [armed, pieces, reduceMotion, leave, title, descend, motion]);
+  }, [armed, reduceMotion, leave, morph, blooms, reel, open, motor, screechStart, screechEnd, theme.motion.imageFadeMs, theme.motion.introReducedHoldMs]);
 
-  const sheetStyle = useAnimatedStyle(() => ({
-    opacity: 1 - exit.get(),
-    transform: [{ scale: 1 + exit.get() * 0.08 }],
+  const sheetStyle = useAnimatedStyle(() => ({ opacity: 1 - exit.get() }));
+  const cassStyle = useAnimatedStyle(() => ({
+    opacity: morph.get() * (1 - open.get()),
+    transform: [{ scale: 0.86 + morph.get() * 0.14 + open.get() * 0.9 }],
   }));
-  const bunnyStyle = useAnimatedStyle(() => ({ transform: [{ translateY: (bunnyY - bunnyY0) * descend.get() }] }));
-  const titleStyle = useAnimatedStyle(() => ({
-    opacity: Math.min(1, title.get() * 1.4),
-    transform: [{ translateY: (1 - title.get()) * -spacing.xl }, { rotate: '-3deg' }, { scale: 0.85 + title.get() * 0.15 }],
-  }));
+  const titleStyle = useAnimatedStyle(() => ({ opacity: Math.min(1, blooms.get() * 2) * (1 - open.get()), transform: [{ translateY: (1 - Math.min(1, blooms.get() * 2)) * spacing.md }] }));
+  const reelTotal = chips.length > 0 ? (chips[chips.length - 1]?.start ?? 0) + (chips[chips.length - 1]?.dur ?? 0) : 1;
 
   return (
-    <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: colors.desk }, sheetStyle]}>
+    <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: SPLASH_BG }, sheetStyle]}>
       <Pressable
         style={StyleSheet.absoluteFill}
         onPress={() => {
           tapHaptic();
-          leave();
+          leave(true);
         }}
         accessibilityRole="button"
         accessibilityLabel="Skip the intro"
       >
-        {/* A whole screen of moving paper: flat shadows only, so every frame stays cheap. */}
-        <LiteShadows>
-          {reduceMotion || !armed ? null : pieces.filter((p) => !p.inFront).map((p) => <FallingPiece key={p.entry.id} piece={p} H={H} exit={exit} />)}
-        </LiteShadows>
-        <Animated.View style={[{ position: 'absolute', left: bunnyX, top: bunnyY0 }, bunnyStyle]}>
-          <Buddy mood={mood} size={bunnyW} bump={bump} entrance={false} accent={SPLASH_BOW} onShown={onShown} />
-        </Animated.View>
-        <LiteShadows>
-          {reduceMotion || !armed ? null : pieces.filter((p) => p.inFront).map((p) => <FallingPiece key={p.entry.id} piece={p} H={H} exit={exit} />)}
-        </LiteShadows>
+        {/* Watercolour blooming out behind the cassette, and spreading over everything as it opens. */}
+        {bloomColors.map((c, i) => (
+          <Bloom key={i} color={c} index={i} progress={blooms} open={open} cx={cx + ((i % 3) - 1) * W * 0.22} cy={cy + (i % 2 ? -1 : 1) * H * 0.08 + (i - 2.5) * 14} size={W * (0.7 + (i % 3) * 0.18)} />
+        ))}
 
-        {/* The name on a taped paper label, laid on top of the heap. */}
-        <Animated.View style={[styles.title, { top: H * 0.3 }, titleStyle]}>
-          <View
-            style={{
-              backgroundColor: colors.paperWhite,
-              borderRadius: radii.paper * 2,
-              paddingHorizontal: spacing.xl,
-              paddingVertical: spacing.sm,
-              boxShadow: theme.shadow(undefined, 1.6),
-            }}
-          >
-            <View>
-              {titleW > 0 ? (
-                <Doodle
-                  kind="highlight"
-                  width={titleW + spacing.md}
-                  height={typography.title.lineHeight ?? 0}
-                  color={colors.amber}
-                  seed={8}
-                  style={{ position: 'absolute', left: -spacing.sm / 2, top: spacing.xs }}
-                />
-              ) : null}
-              <Text
-                onLayout={(e) => setTitleW(e.nativeEvent.layout.width)}
-                numberOfLines={1}
-                textBreakStrategy="simple"
-                style={[typography.title, { color: colors.ink }]}
-              >
-                LookBack{' '}
-              </Text>
-            </View>
-            <WashiTape
-              width={sizes.tapeHeight * 4}
-              color={SPLASH_BOW ?? colors.amber}
-              color2={colors.paperWhite}
-              pattern="stripes"
-              angle={6}
-              style={{ position: 'absolute', top: -sizes.tapeHeight / 2, alignSelf: 'center' }}
-            />
-          </View>
+        {/* The memories, fast-forwarding through it: in at the right, out at the left, behind the shell. */}
+        {chips.map((chip) => (
+          <MemoryChip key={chip.key} chip={chip} reel={reel} total={reelTotal} fromX={W + CHIP_W} toX={-CHIP_W * 2} y={tapeY} paper={colors.panel} ink={colors.ink} />
+        ))}
+
+        <Animated.View style={[{ position: 'absolute', left: cx - cassW / 2, top: cy - cassH / 2 }, cassStyle]}>
+          <Cassette width={cassW} title="LookBack" detail="C·365" spinning={spinning} played={0.2} />
+        </Animated.View>
+
+        <Animated.View style={[styles.title, { top: cy + cassH / 2 + spacing.xl }, titleStyle]}>
+          <Text numberOfLines={1} style={[typography.title, { color: theme.paper.light, textAlign: 'center', alignSelf: 'stretch' }]}>
+            LookBack{' '}
+          </Text>
+          <Text style={[typography.caption, { color: withAlpha(theme.paper.light, 0.7), textAlign: 'center', alignSelf: 'stretch' }]}>a diary that writes back</Text>
         </Animated.View>
       </Pressable>
     </Animated.View>
   );
 }
 
-/** One memory tumbling down from above the screen and landing with a little bounce. */
-const FallingPiece = memo(function FallingPiece({ piece, H, exit }: { piece: Piece; H: number; exit: SharedValue<number> }) {
-  const { motion, colors, opacity, radii } = useTheme();
-  const t = useSharedValue(0);
-  useEffect(() => {
-    // An underdamped spring overshoots a touch past the landing spot: the bounce.
-    // Every piece is built in one go while the bunny still sits in the middle (nothing is moving yet,
-    // so that work can't cost a visible frame); after that the rain is pure motion on the UI thread.
-    t.set(withDelay(piece.delay, withSpring(1, { duration: motion.introFallMs, dampingRatio: 0.62 })));
-  }, [t, piece.delay, motion.introFallMs]);
-  const fromY = -piece.width * 1.6 - H * 0.1;
+/** One watercolour bloom: a soft round of colour that spreads and pales like paint into wet paper, then floods out as it opens. */
+function Bloom({ color, index, progress, open, cx, cy, size }: { color: string; index: number; progress: SharedValue<number>; open: SharedValue<number>; cx: number; cy: number; size: number }) {
+  const start = (index * BLOOM_STAGGER_MS) / BLOOM_MS;
   const style = useAnimatedStyle(() => {
-    const p = t.get();
+    const p = Math.max(0, Math.min(1, (progress.get() - start) / (1 - start)));
+    const o = open.get();
     return {
-      opacity: p > 0.001 ? 1 : 0,
-      transform: [
-        { translateX: piece.startX + (piece.endX - piece.startX) * p - piece.width / 2 },
-        // Leaving: the heap drifts down a little as the sheet lifts away.
-        { translateY: fromY + (piece.endY - fromY) * p + exit.get() * 30 },
-        { rotate: `${piece.startRot + (piece.endRot - piece.startRot) * p}deg` },
-      ],
+      opacity: p * (0.55 - p * 0.2) * (1 - o * 0.6),
+      transform: [{ scale: 0.25 + p * 0.95 + o * 2.2 }],
     };
   });
   return (
-    <Animated.View pointerEvents="none" style={[styles.piece, { width: piece.width }, style]}>
-      {/* A flat offset shape stands in for the soft paper shadow. */}
-      <View
-        style={[
-          StyleSheet.absoluteFill,
-          { backgroundColor: colors.shadowBase, opacity: opacity.pileShadow, borderRadius: radii.paper * 2, transform: [{ translateX: 3 }, { translateY: 5 }] },
-        ]}
-      />
-      <ScrapObject entry={piece.entry} width={piece.width} numberOfLines={3} raster={false} />
+    <Animated.View
+      pointerEvents="none"
+      style={[
+        {
+          position: 'absolute',
+          left: cx - size / 2,
+          top: cy - size / 2,
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          // closest-side: the wash is fully faded by the circle's edge, so no rim shows (paint feathering into wet paper).
+          backgroundImage: `radial-gradient(circle closest-side at 50% 50%, ${withAlpha(color, 0.8)} 0%, ${withAlpha(color, 0.5)} 35%, ${withAlpha(color, 0.18)} 65%, ${withAlpha(color, 0)} 100%)`,
+        },
+        style,
+      ]}
+    />
+  );
+}
+
+/** A memory flying through the tape: a little print (or a slip with its first words), stretched by its speed. */
+function MemoryChip({ chip, reel, total, fromX, toX, y, paper, ink }: { chip: Chip; reel: SharedValue<number>; total: number; fromX: number; toX: number; y: number; paper: string; ink: string }) {
+  const { typography } = useTheme();
+  const a = chip.start / total;
+  const b = (chip.start + chip.dur) / total;
+  const style = useAnimatedStyle(() => {
+    const t = (reel.get() - a) / (b - a);
+    const k = Math.max(0, Math.min(1, t));
+    const speed = 1 + (1 - chip.dur / FIRST_PASS_MS) * 0.8;
+    return {
+      opacity: t <= 0 || t >= 1 ? 0 : 1,
+      transform: [{ translateX: fromX + (toX - fromX) * k }, { translateY: y - CHIP_W * 0.6 + chip.dy }, { rotate: `${chip.tilt}deg` }, { scaleX: speed }],
+    };
+  });
+  return (
+    <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: CHIP_W, height: CHIP_W * 1.2, padding: 4, paddingBottom: 12, backgroundColor: paper, borderRadius: 2, boxShadow: '0px 2px 4px rgba(0,0,0,0.4)' }, style]}>
+      {chip.uri ? (
+        <Image source={{ uri: chip.uri }} style={{ flex: 1 }} contentFit="cover" cachePolicy="memory-disk" />
+      ) : (
+        <Text numberOfLines={4} style={[typography.hand, { fontSize: 11, lineHeight: 12, color: ink, paddingRight: 0 }]}>
+          {chip.words}
+        </Text>
+      )}
     </Animated.View>
   );
-});
+}
 
 const styles = StyleSheet.create({
-  title: { position: 'absolute', left: 0, right: 0, alignItems: 'center', zIndex: 10 },
-  piece: { position: 'absolute', left: 0, top: 0 },
+  title: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
 });

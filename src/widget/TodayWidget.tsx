@@ -1,125 +1,114 @@
-import { FlexWidget, ImageWidget, OverlapWidget, SvgWidget, TextWidget, type ColorProp, type HexColor } from 'react-native-android-widget';
+import { FlexWidget, OverlapWidget, SvgWidget, TextWidget, type HexColor } from 'react-native-android-widget';
+import type { IconState } from '../lib/appIcon';
 import type { Paper } from '../theme/papers';
 import type { YearPalette } from '../theme/yearColors';
+import { cassetteSvg } from './cassetteSvg';
 
 export interface TodayWidgetProps {
   /** Today's page, if written: its first lines (or a photo note) and its id. */
-  today: { id: string; text: string; hasPhoto: boolean } | null;
+  today: { id: string; text: string; hasPhoto: boolean; hasVoice: boolean } | null;
   /** "Nov 11". */
   dateLabel: string;
-  /** How many letters from past years are waiting today. */
+  /** "Saturday". */
+  weekday: string;
+  /** How many pages from past years came back today. */
   letters: number;
   /** Days in a row with a page, counting today if written. */
   streak: number;
+  /** How far through the year today is (0–1): the tape wound onto the right reel. */
+  yearProgress: number;
+  /** The cassette's state, the same as the app icon's: whole, waiting, cracked, shattered. */
+  state: IconState;
   paper: Paper;
   dark: boolean;
   year: YearPalette;
-  /** Ink and paper-white from the theme tokens. */
   ink: string;
   inkMuted: string;
   paperWhite: string;
 }
 
-const HAND_BOLD = 'Caveat_700Bold';
+/** The widget's fonts are registered in app.json (react-native-android-widget → fonts). */
+const PRINT = 'IMFellEnglish_400Regular_Italic';
 const HAND = 'Caveat_600SemiBold';
-const BUNNY = {
-  wave: require('../../assets/buddy/wave.png'),
-  cheer: require('../../assets/buddy/cheer.png'),
-  plead: require('../../assets/buddy/happy.png'),
-};
-const BUNNY_PX = 92;
-const TAPE_W = 86;
-const TAPE_H = 22;
-const DOT_GAP = 14;
-
-/** Dotted page, drawn as SVG so the widget is the same paper as the app. */
-function dots(color: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="220"><defs><pattern id="d" width="${DOT_GAP}" height="${DOT_GAP}" patternUnits="userSpaceOnUse"><circle cx="${DOT_GAP / 2}" cy="${DOT_GAP / 2}" r="1.1" fill="${color}" fill-opacity="0.35"/></pattern></defs><rect width="400" height="220" fill="url(#d)"/></svg>`;
-}
-
-/** A strip of striped washi tape. */
-function tape(color: string, stripe: string): string {
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="${TAPE_W}" height="${TAPE_H}"><defs><pattern id="s" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><rect width="4" height="8" fill="${stripe}" fill-opacity="0.55"/></pattern></defs><path d="M2 1 L${TAPE_W - 2} 0 L${TAPE_W} 4 L${TAPE_W - 3} 8 L${TAPE_W} 13 L${TAPE_W - 2} ${TAPE_H} L1 ${TAPE_H - 1} L3 15 L0 10 L3 5 Z" fill="${color}" fill-opacity="0.9"/><path d="M2 1 L${TAPE_W - 2} 0 L${TAPE_W} 4 L${TAPE_W - 3} 8 L${TAPE_W} 13 L${TAPE_W - 2} ${TAPE_H} L1 ${TAPE_H - 1} L3 15 L0 10 L3 5 Z" fill="url(#s)"/></svg>`;
-}
+/** The stage the cassette sits on: near-black, lit from behind in the paper's color. */
+const STAGE = '#0B0B0C';
+const LETTERING = '#EDE3CC';
+const LETTERING_SOFT = 'rgba(237, 227, 204, 0.62)';
+const RED = '#C8372B';
 
 const hex = (c: string) => c.slice(0, 7) as HexColor;
 
+/** The glow behind the cassette: a soft pool of the paper's accent, as if a lamp were on it. */
+function glow(color: string): string {
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="400" height="200" viewBox="0 0 400 200" preserveAspectRatio="none"><defs><radialGradient id="g" cx="0.5" cy="0.42" r="0.6"><stop offset="0" stop-color="${color}" stop-opacity="0.55"/><stop offset="0.55" stop-color="${color}" stop-opacity="0.12"/><stop offset="1" stop-color="${color}" stop-opacity="0"/></radialGradient></defs><rect width="400" height="200" fill="url(#g)"/></svg>`;
+}
+
+/** What the label's second line says: today's words, or what state the tape is in. */
+function labelLine(p: TodayWidgetProps): string {
+  if (p.today) {
+    if (p.today.text) return p.today.text.slice(0, 40);
+    return p.today.hasVoice ? 'your voice, on tape' : 'a photo, tucked in';
+  }
+  if (p.state === 'Gone') return 'it broke while you were away';
+  if (p.state === 'Missed') return 'cracked. a day went unwritten';
+  if (p.state === 'Waiting') return "still blank. what's weighing on you?";
+  return 'blank tape, waiting for today';
+}
+
 /**
- * The home-screen widget: a taped paper card on the person's own paper color with the bunny. Empty
- * day: the bunny waves and asks for today's small thing, and the whole card opens the writing page.
- * Written: today's first lines on a note with "edit" underneath; tapping the note opens it.
+ * The home-screen widget is the diary's cassette, big, on a dark stage lit from behind in the paper's color. Its label is
+ * today, in handwriting: the date, and the first words you wrote (or "blank tape, waiting for today"). The tape on its
+ * reels is the year so far. It breaks the way the app icon does when days go unwritten, and when a past year has come
+ * back a red "a letter waiting" postmark is struck across it. Under it, one line: write or open today, and the letters
+ * or the streak. Tap the cassette to write today's page (or open it once written).
  */
 export function TodayWidget(props: TodayWidgetProps) {
-  const { today, paper, dark, year } = props;
-  const page = hex(dark ? paper.dark : paper.light);
-  const onPage = hex(dark ? props.paperWhite : props.ink);
-  const onPageMuted: ColorProp = dark ? 'rgba(255, 255, 255, 0.7)' : hex(props.inkMuted);
+  const { today, paper } = props;
   const open = today ? `yearbook:///memory/${today.id}` : 'yearbook:///entry';
+  const detail = props.streak > 1 ? `${props.streak} DAYS` : 'C·365';
+  const tape = cassetteSvg({
+    title: `${props.dateLabel} · ${props.weekday}`,
+    line: labelLine(props),
+    detail,
+    state: today ? 'Default' : props.state,
+    letters: props.letters,
+    played: props.yearProgress,
+    hand: HAND,
+    print: PRINT,
+  });
 
   return (
-    <OverlapWidget style={{ height: 'match_parent', width: 'match_parent', borderRadius: 24, backgroundColor: page }}>
-      <SvgWidget svg={dots(dark ? '#FFFFFF' : paper.dots)} style={{ height: 'match_parent', width: 'match_parent' }} />
-      <FlexWidget
-        clickAction="OPEN_URI"
-        clickActionData={{ uri: open }}
-        accessibilityLabel={today ? "Open today's memory" : "Write today's memory"}
-        style={{ height: 'match_parent', width: 'match_parent', flexDirection: 'row', alignItems: 'center', paddingHorizontal: 12, paddingVertical: 10 }}
-      >
-        <ImageWidget image={today ? BUNNY.cheer : BUNNY.wave} imageWidth={BUNNY_PX} imageHeight={BUNNY_PX} />
-        <FlexWidget style={{ flex: 1, height: 'match_parent', flexDirection: 'column', justifyContent: 'center', marginLeft: 6 }}>
-          <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between' }}>
-            <TextWidget text={today ? 'today ✓' : 'today'} style={{ fontFamily: HAND_BOLD, fontSize: 22, color: today ? hex('#2DB86A') : onPage }} />
-            <TextWidget text={props.dateLabel} style={{ fontFamily: HAND, fontSize: 17, color: onPageMuted }} />
-          </FlexWidget>
-          {today ? (
-            // Today's note on a little white card.
-            <FlexWidget
-              style={{
-                width: 'match_parent',
-                backgroundColor: hex(props.paperWhite),
-                borderRadius: 6,
-                borderLeftWidth: 3,
-                borderLeftColor: hex(year.primary),
-                paddingHorizontal: 10,
-                paddingVertical: 6,
-                marginTop: 2,
-              }}
-            >
-              <TextWidget
-                text={today.text || (today.hasPhoto ? 'a photo you saved 📷' : 'a moment you saved')}
-                maxLines={2}
-                truncate="END"
-                style={{ fontFamily: HAND, fontSize: 18, color: hex(props.ink) }}
-              />
-            </FlexWidget>
-          ) : (
-            <TextWidget text="What's one small thing from today?" maxLines={2} style={{ fontFamily: HAND, fontSize: 19, color: onPage, marginTop: 2 }} />
-          )}
-          <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 6 }}>
-            <FlexWidget
-              clickAction="OPEN_URI"
-              clickActionData={{ uri: 'yearbook:///entry' }}
-              accessibilityLabel={today ? "Edit today's memory" : "Write today's memory"}
-              style={{ backgroundColor: hex(today ? '#2DB86A' : year.primary), borderRadius: 16, paddingHorizontal: 12, paddingVertical: 3 }}
-            >
-              <TextWidget text={today ? '✎ edit' : '+ add today'} style={{ fontFamily: HAND_BOLD, fontSize: 17, color: hex(props.paperWhite) }} />
-            </FlexWidget>
-            {props.letters > 0 ? (
-              <TextWidget
-                clickAction="OPEN_URI"
-                clickActionData={{ uri: 'yearbook:///' }}
-                text={props.letters === 1 ? '💌 a letter!' : `💌 ${props.letters} letters!`}
-                style={{ fontFamily: HAND_BOLD, fontSize: 17, color: hex(year.primary) }}
-              />
-            ) : props.streak > 1 ? (
-              <TextWidget text={`${props.streak} days 🔥`} style={{ fontFamily: HAND_BOLD, fontSize: 17, color: onPageMuted }} />
-            ) : null}
-          </FlexWidget>
+    <OverlapWidget style={{ height: 'match_parent', width: 'match_parent', borderRadius: 24, backgroundColor: hex(STAGE) }}>
+      <SvgWidget svg={glow(paper.dots)} style={{ height: 'match_parent', width: 'match_parent' }} />
+      <FlexWidget style={{ height: 'match_parent', width: 'match_parent', flexDirection: 'column', alignItems: 'center', paddingHorizontal: 14, paddingTop: 10, paddingBottom: 8 }}>
+        <FlexWidget
+          clickAction="OPEN_URI"
+          clickActionData={{ uri: open }}
+          accessibilityLabel={today ? "Open today's page" : "Write today's page"}
+          style={{ flex: 1, width: 'match_parent', alignItems: 'center', justifyContent: 'center' }}
+        >
+          <SvgWidget svg={tape} style={{ height: 'match_parent', width: 'match_parent' }} />
         </FlexWidget>
-      </FlexWidget>
-      {/* Taped to the home screen. */}
-      <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', justifyContent: 'center' }}>
-        <SvgWidget svg={tape(year.primary, '#FFFFFF')} style={{ width: TAPE_W, height: TAPE_H, rotation: -3 }} />
+        <FlexWidget style={{ width: 'match_parent', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', marginTop: 4 }}>
+          <FlexWidget
+            clickAction="OPEN_URI"
+            clickActionData={{ uri: 'yearbook:///entry' }}
+            accessibilityLabel={today ? "Edit today's page" : "Write today's page"}
+            style={{ borderRadius: 12, borderWidth: 1, borderColor: hex(paper.dots), paddingHorizontal: 12, paddingVertical: 2 }}
+          >
+            <TextWidget text={today ? '✎ edit today' : '● record today'} style={{ fontFamily: PRINT, fontSize: 14, color: today ? hex(LETTERING) : hex(RED) }} />
+          </FlexWidget>
+          {props.letters > 0 ? (
+            <TextWidget
+              clickAction="OPEN_URI"
+              clickActionData={{ uri: 'yearbook:///' }}
+              text={props.letters === 1 ? 'a letter from your past self' : `${props.letters} letters from your past self`}
+              style={{ fontFamily: PRINT, fontSize: 14, color: hex(paper.dots) }}
+            />
+          ) : (
+            <TextWidget text={props.streak > 1 ? `${props.streak} days on tape` : 'LookBack'} style={{ fontFamily: PRINT, fontSize: 14, color: LETTERING_SOFT }} />
+          )}
+        </FlexWidget>
       </FlexWidget>
     </OverlapWidget>
   );

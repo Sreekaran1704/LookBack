@@ -12,7 +12,13 @@ import { mixHex } from '../../theme/yearColors';
 export interface VoicePlayer {
   progress: SharedValue<number>;
   playing: boolean;
+  ready?: boolean;
   toggle: () => void;
+  /** Stop and wind back to the start (the tape recorder's STOP and REWIND). */
+  stop?: () => void;
+  /** Where it is and how long it is, in ms (for tape winding). */
+  positionMs?: number;
+  durationMs?: number;
 }
 
 /** Share of each bar's slot that is ink (the rest is the gap between bars). */

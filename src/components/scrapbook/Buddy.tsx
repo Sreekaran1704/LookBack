@@ -1,5 +1,5 @@
 import { Image, type ImageRef } from 'expo-image';
-import { memo, useEffect } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Pressable, StyleSheet, Text, View, type StyleProp, type ViewStyle } from 'react-native';
 import Animated, {
   cancelAnimation,
@@ -16,6 +16,7 @@ import Animated, {
 import { selectHaptic } from '../../lib/haptics';
 import { useTheme } from '../../theme';
 import { usePageActive } from '../PageActive';
+import { Cassette } from './Cassette';
 import { Raster } from './Raster';
 
 export type BuddyMood = 'wave' | 'happy' | 'sleepy' | 'cheer' | 'peek';
@@ -33,6 +34,10 @@ interface Props {
   onShown?: () => void;
   /** Tap it and it squishes, hops and blinks (off where a tap must reach something under it, e.g. the intro). */
   tappable?: boolean;
+  /** The old cream bunny sticker instead of the gilt emblem (only the intro, which must match the splash screen). */
+  classic?: boolean;
+  /** The square app icon instead of the cassette (the intro, which must match the splash screen exactly). */
+  icon?: boolean;
   style?: StyleProp<ViewStyle>;
 }
 
@@ -59,7 +64,8 @@ const BLINKS: Partial<Record<BuddyMood, number>> = {
 
 /** Decodes every pose ahead of time, so a bunny never appears a frame late. Call once at startup. */
 export function preloadBuddy(): Promise<ImageRef[]> {
-  return Promise.all([...Object.values(POSES), ...Object.values(BLINKS), BOW].map((source) => Image.loadAsync(source)));
+  // The stamp first: the intro shows it in the very first frame, in the splash's place.
+  return Promise.all([STAMP, ...Object.values(POSES), ...Object.values(BLINKS), BOW].map((source) => Image.loadAsync(source)));
 }
 
 /** `peek` only shows the ears, eyes and paws, as if looking over an edge (its picture is the top 68%). */
@@ -83,12 +89,97 @@ const TILT_SPREAD_MS = 4000;
 /** A tap squishes it (and it springs back up with a hop). */
 const SQUISH = 0.12;
 
+/** The stamp: gilt rings, LOOKBACK over the top and a mixtape at its heart (scripts/make-icons.mjs → assets/stamp.png). */
+export const STAMP: number = require('../../../assets/stamp.png');
+const STAMP_PRESS = 0.95;
+/** A cassette is 100 × 63; tapped, its reels turn this long. */
+const CASSETTE_RATIO = 0.63;
+const SPIN_FOR_MS = 2400;
+
 /**
- * The buddy: a small, soft cream bunny sticker that keeps the user company. It is alive: it pops in
- * when it appears, bobs (rocking when it waves, bouncing when it cheers, breathing slowly when asleep),
- * and hops whenever `bump` changes. With "reduce motion" on it holds still. It looks the same in dark mode.
+ * The diary's mark: a round postmark tooled in gilt into the leather, "LOOKBACK" around the top and a mixtape
+ * at its heart: what you say or write here is kept, and played back to you a year on. It sits still, fades in when it appears and gives a small press when `bump` changes or it is tapped.
+ * It takes the old bunny's place and size, so every page that had one keeps its layout.
  */
-export const Buddy = memo(function Buddy({ mood = 'happy', size, accent, bump, entrance = true, onShown, tappable = false, style }: Props) {
+const Emblem = memo(function Emblem({ mood = 'happy', size, bump, entrance = true, onShown, tappable = false, icon = false, style }: Props) {
+  const theme = useTheme();
+  const { sizes, motion } = theme;
+  const s = size ?? sizes.buddy;
+  const reduceMotion = useReducedMotion();
+  const height = mood === 'peek' ? s * PEEK_SHARE : s;
+  const d = Math.min(s, height);
+  const fade = useSharedValue(reduceMotion || !entrance ? 1 : 0);
+  const press = useSharedValue(0);
+  const [spinning, setSpinning] = useState(false);
+
+  useEffect(() => {
+    onShown?.();
+    // Only once, when it first appears.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  useEffect(() => {
+    if (reduceMotion || !entrance) return;
+    fade.set(withTiming(1, { duration: motion.imageFadeMs * 2 }));
+  }, [fade, entrance, reduceMotion, motion.imageFadeMs]);
+  useEffect(() => {
+    if (reduceMotion || bump === undefined) return;
+    press.set(withSequence(withTiming(1, { duration: 90 }), withSpring(0, motion.buttonRelease)));
+  }, [bump, press, reduceMotion, motion.buttonRelease]);
+  // A tap plays the tape for a moment: the reels turn, then stop.
+  useEffect(() => {
+    if (!spinning) return;
+    const t = setTimeout(() => setSpinning(false), SPIN_FOR_MS);
+    return () => clearTimeout(t);
+  }, [spinning]);
+
+  const animStyle = useAnimatedStyle(() => ({ opacity: fade.get(), transform: [{ scale: 1 - press.get() * (1 - STAMP_PRESS) }] }));
+  const mark = icon ? (
+    <Animated.View style={[{ width: d, height: d }, animStyle]}>
+      <Image source={STAMP} style={{ width: d, height: d }} contentFit="contain" transition={0} cachePolicy="memory" />
+    </Animated.View>
+  ) : (
+    // A real cassette, lying a little crooked like it was put down on the page.
+    <Animated.View style={[{ transform: [{ rotate: '-4deg' }] }, animStyle]}>
+      <Cassette width={s} title="LookBack" detail="C·365" spinning={spinning} />
+    </Animated.View>
+  );
+  const box = [{ width: s, height: icon ? height : s * CASSETTE_RATIO, alignItems: 'center' as const, justifyContent: 'center' as const }, style];
+  if (tappable) {
+    return (
+      <Pressable
+        onPress={() => {
+          selectHaptic();
+          if (!reduceMotion) press.set(withSequence(withTiming(1, { duration: 90 }), withSpring(0, motion.buttonRelease)));
+          setSpinning(true);
+        }}
+        style={box}
+        accessibilityRole="button"
+        accessibilityLabel="LookBack cassette"
+        accessibilityHint="Plays the tape for a moment"
+        hitSlop={sizes.hitSlop}
+      >
+        {mark}
+      </Pressable>
+    );
+  }
+  return (
+    <View pointerEvents="none" style={box} accessibilityElementsHidden importantForAccessibility="no">
+      {mark}
+    </View>
+  );
+});
+
+/** The diary's stamp everywhere; the classic cream bunny only where asked (the intro). */
+export const Buddy = memo(function Buddy(props: Props) {
+  return props.classic ? <ClassicBuddy {...props} /> : <Emblem {...props} />;
+});
+
+/**
+ * The classic buddy: a small, soft cream bunny sticker. It is alive: it pops in when it appears, bobs (rocking
+ * when it waves, bouncing when it cheers, breathing slowly when asleep), and hops whenever `bump` changes. With
+ * "reduce motion" on it holds still. Now only the intro uses it, to match the splash screen.
+ */
+const ClassicBuddy = memo(function ClassicBuddy({ mood = 'happy', size, accent, bump, entrance = true, onShown, tappable = false, style }: Props) {
   const theme = useTheme();
   const { colors, sizes, motion } = theme;
   const s = size ?? sizes.buddy;
@@ -236,25 +327,28 @@ interface SaysProps {
 /** The buddy next to a small paper speech note. Used for empty states and gentle nudges. */
 export function BuddySays({ text, mood = 'wave', accent, size, bump, style }: SaysProps) {
   const theme = useTheme();
-  const { colors, spacing, typography, radii, sizes } = theme;
+  const { colors, spacing, typography, sizes } = theme;
   return (
-    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }, style]}>
-      <Buddy mood={mood} accent={accent} size={size ?? sizes.buddy} bump={bump} tappable />
-      {/* A texture: its soft shadow would otherwise be blurred again every frame the bunny beside it bobs. */}
+    <View style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.md }, style]}>
+      <Buddy mood={mood} accent={accent} size={(size ?? sizes.buddy) * 0.8} bump={bump} tappable />
+      {/* A slip of diary paper with a printed note. A texture: its shadow is drawn once. */}
       <Raster style={{ flex: 1 }}>
-      <View
-        style={{
-          backgroundColor: colors.paperWhite,
-          borderRadius: radii.album,
-          borderBottomLeftRadius: radii.paper,
-          paddingHorizontal: spacing.lg,
-          paddingVertical: spacing.md,
-          boxShadow: theme.shadow(accent, 0.8),
-          transform: [{ rotate: '-1deg' }],
-        }}
-      >
-        <Text style={[typography.caption, { color: colors.ink }]}>{text}</Text>
-      </View>
+        <View
+          style={{
+            backgroundColor: colors.paper,
+            borderTopLeftRadius: 2,
+            borderBottomLeftRadius: 2,
+            borderTopRightRadius: 6,
+            borderBottomRightRadius: 6,
+            paddingLeft: spacing.xl,
+            paddingRight: spacing.lg,
+            paddingVertical: spacing.md,
+            boxShadow: theme.shadow(undefined, 0.8),
+          }}
+        >
+          <View style={{ position: 'absolute', left: spacing.md, top: 0, bottom: 0, width: StyleSheet.hairlineWidth * 2, backgroundColor: colors.marginLine }} />
+          <Text style={[typography.caption, { color: colors.ink }]}>{text}</Text>
+        </View>
       </Raster>
     </View>
   );

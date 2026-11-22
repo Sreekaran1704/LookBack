@@ -139,11 +139,43 @@ export function formatDisplayDate(date: LocalDate, locale = 'en-US'): string {
 }
 
 /** "November 9" */
+const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+/** 1st, 2nd, 3rd, 4th … 11th, 12th, 13th … 21st, 22nd, 23rd … */
+export function ordinal(n: number): string {
+  const tens = n % 100;
+  if (tens >= 11 && tens <= 13) return `${n}th`;
+  const suffix = ['th', 'st', 'nd', 'rd'][n % 10] ?? 'th';
+  return `${n}${n % 10 > 3 ? 'th' : suffix}`;
+}
+
+/** The date the way a diary writes it at the top of a page: "The 20th of November, 2025". */
+export function formatDiaryDate(date: LocalDate): string {
+  const { year, month, day } = parseLocalDate(date);
+  return `The ${ordinal(day)} of ${MONTHS[month - 1] ?? ''}, ${year}`;
+}
+
 export function formatMonthDay(date: LocalDate, locale = 'en-US'): string {
   return atLocalTime(date).toLocaleDateString(locale, { month: 'long', day: 'numeric' });
 }
 
 /** "One year ago today", "2 years ago today" */
+/**
+ * How a reply to your past self is headed, by how long after the memory it was written: "a year on" when it came
+ * back on its day a year later, "2 years on", or just "later" for a reply written within the year.
+ */
+export function replyLabel(entryDate: LocalDate, repliedOn: LocalDate): string {
+  const a = parseLocalDate(entryDate);
+  const b = parseLocalDate(repliedOn);
+  // Whole years that have passed: a year only counts once its day has come round again (a Feb 29 memory comes
+  // round on Feb 28 in other years, the same day it comes back).
+  const day = a.month === 2 && a.day === 29 && !isLeapYear(b.year) ? 28 : a.day;
+  const beforeItsDay = b.month < a.month || (b.month === a.month && b.day < day);
+  const years = b.year - a.year - (beforeItsDay ? 1 : 0);
+  if (years <= 0) return 'later';
+  return years === 1 ? 'a year on' : `${years} years on`;
+}
+
 export function yearsAgoLabel(years: number): string {
   if (years === 1) return 'One year ago today';
   return `${years} years ago today`;
@@ -167,4 +199,29 @@ export function shiftYears(date: LocalDate, years: number): LocalDate {
   const { year, month, day } = parseLocalDate(date);
   const target = year + years;
   return formatLocalDate({ year: target, month, day: Math.min(day, daysInMonth(target, month)) });
+}
+
+/** Roman numerals for the year tooled on a spine (MMXXVI). */
+export function romanYear(year: number): string {
+  const table: [number, string][] = [
+    [1000, 'M'], [900, 'CM'], [500, 'D'], [400, 'CD'], [100, 'C'], [90, 'XC'],
+    [50, 'L'], [40, 'XL'], [10, 'X'], [9, 'IX'], [5, 'V'], [4, 'IV'], [1, 'I'],
+  ];
+  let n = year;
+  let out = '';
+  for (const [v, r] of table) {
+    while (n >= v) {
+      out += r;
+      n -= v;
+    }
+  }
+  return out;
+}
+
+/** How far through its calendar year a day is, from 0 (1 January) to 1 (31 December). */
+export function yearProgress(date: LocalDate): number {
+  const { year, month, day } = parseLocalDate(date);
+  const start = Date.UTC(year, 0, 1);
+  const end = Date.UTC(year + 1, 0, 1);
+  return (Date.UTC(year, month - 1, day) - start) / (end - start - 86400000);
 }

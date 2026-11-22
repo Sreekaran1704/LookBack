@@ -1,11 +1,10 @@
 import { useMemo } from 'react';
 import { Text } from 'react-native';
 import type { Entry } from '../data';
-import { groupByYear, parseLocalDate } from '../lib/dates';
+import { groupByYear, parseLocalDate, yearProgress } from '../lib/dates';
 import { useTheme } from '../theme';
 import { useBookFlight } from './BookFlight';
 import { BookSpine, spineSize } from './scrapbook/BookSpine';
-import { Buddy } from './scrapbook/Buddy';
 import { BOOK_GAP, CUPBOARD_FRAME, Cupboard, SHELF_INSET } from './scrapbook/Cupboard';
 import { DropIn } from './scrapbook/DropIn';
 
@@ -19,7 +18,6 @@ export function YearsCupboard({ entries, today, width, dropFrom = 0 }: { entries
   const { colors, spacing, scrap, typography, sizes } = theme;
   const flight = useBookFlight();
   const years = useMemo(() => groupByYear(entries), [entries]);
-  const thisYear = theme.year(parseLocalDate(today).year);
   // The diary as it appears once pulled out (the flying cover), and the books on the shelves.
   const albumW = (width - spacing.xl) / scrap.collageColumns;
   const shelfW = width - CUPBOARD_FRAME * 2 - SHELF_INSET * 2;
@@ -57,13 +55,13 @@ export function YearsCupboard({ entries, today, width, dropFrom = 0 }: { entries
                 age={age}
                 maxHeight={sizes.spineMax}
                 hidden={flight.flying === group.year}
+                fill={age > 0 ? 1 : yearProgress(today)}
                 onPress={(frame) => flight.fly({ year: group.year, count: group.entries.length, age, width: albumW, spineMax: sizes.spineMax, frame })}
               />
             </DropIn>
           );
         }),
       )}
-      decor={<Buddy mood="happy" size={sizes.buddySmall} entrance={false} accent={thisYear.primary} tappable />}
     />
   );
 }

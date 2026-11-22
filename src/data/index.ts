@@ -4,3 +4,4 @@ export { backupRepository, type BackupRepository, type BackupResult, type Backup
 export { resolvePhotoUri } from './photoStore';
 export { resolveVoiceUri } from './voiceStore';
 export type { BackupInfo, Entry, EntryStyle, PhotoChange, ReminderSettings, SaveEntryInput, VoiceChange } from './types';
+export { accountRepository, type AccountStatus } from './accountRepository';

@@ -44,11 +44,14 @@ A soft clay bunny cheers when you save, peeks over the page, and naps when there
 🎨 MAKE IT YOURS
 Pick your paper (cream, peach, rose, lemon, mint, sky, lavender) in light or lamplit dark, and choose the sticker and washi tape on every memory.
 
+💌 GIVE A PAGE TO SOMEONE YOU LOVE
+Add the people you trust (beside you, or by sharing your code), and give them a page: it flies straight from your phone to theirs, encrypted, like AirDrop. Pages from your people arrive by themselves, even when LookBack is closed.
+
 🔔 GENTLE REMINDERS
 A quiet note on the days when a memory from an earlier year is waiting, at the time you choose.
 
 🔒 PRIVATE BY DESIGN
-Your memories stay on your phone. No account, no ads, no tracking. If you like, back them up to a "LookBack" folder in your own Google Drive; the app can only see the files it made there.
+Your memories stay on your phone. No ads, no tracking. If you like, back them up to a "LookBack" folder in your own Google Drive; the app can only see the files it made there. Pages you give go phone to phone and are never stored on a server.
 
 LookBack is made by one person, with care. Start today, and next year, today will be waiting for you.
 ```
@@ -57,11 +60,11 @@ LookBack is made by one person, with care. Start today, and next year, today wil
 
 ```
 Hello, Play Store! ✿
-• Voice memories: record a few seconds, see them as a polaroid with a waveform, tap to listen.
+• Give a page to someone: phone to phone, encrypted, like AirDrop.
+• Pages from your people arrive by themselves, with an alert if LookBack is closed.
+• Voice memories that look like polaroids with a waveform.
 • Photos look like old instant film.
-• Smoother everywhere: opening memories and diaries, sheets and buttons.
-• Buttons sit at the bottom where your thumb is.
-• The bar steps aside inside memories and diaries.
+• A darker bar at night, and buttons where your thumb is.
 ```
 
 ## Category and contact
@@ -106,29 +109,40 @@ https://sreekaran1704.github.io/LookBack/privacy/
 
 ## Data safety
 
-Answer "Does your app collect or share any of the required user data types?" → **Yes** (because the optional Drive
-backup sends data off the phone, Play counts that as "collected", even though it goes to the user's own Drive and
-never to the developer).
+Answer "Does your app collect or share any of the required user data types?" → **Yes**.
 
-- Is all of the user data collected by your app encrypted in transit? **Yes** (HTTPS to Google Drive).
-- Do you provide a way for users to request that their data is deleted? **Yes** (delete in the app; remove the
-  LookBack folder in Drive; link to the privacy policy).
+- Is all of the user data collected by your app encrypted in transit? **Yes** (HTTPS / TLS everywhere).
+- Do you provide a way for users to request that their data is deleted? **Yes**.
+- **Account creation**: users can create an account (the sharing account, via Google sign-in). **Delete account URL**:
+  `https://sreekaran1704.github.io/LookBack/privacy/#delete` (in-app: You → Delete sharing account).
 
 Data types — mark only these as **Collected** (none as **Shared**):
 
 | Data type | Collected | Shared | Processed ephemerally | Required or optional | Purpose |
 |---|---|---|---|---|---|
+| Personal info → **Email address** | Yes | No | No | **Optional** (only when you connect Google) | App functionality, Account management |
+| Personal info → **Name** | Yes | No | No | **Optional** (only while visible to people beside you) | App functionality |
+| Device or other IDs (the push address for alerts) | Yes | No | No | **Optional** | App functionality |
 | Photos and videos → **Photos** | Yes | No | No | **Optional** (only with Drive backup) | App functionality (backup) |
-| Audio → **Voice or sound recordings** | Yes | No | No | **Optional** | App functionality (backup) |
-| App activity → **Other user-generated content** (the written memories) | Yes | No | No | **Optional** | App functionality (backup) |
+| Audio → **Voice or sound recordings** | Yes | No | No | **Optional** (only with Drive backup) | App functionality (backup) |
+| App activity → **Other user-generated content** (the written memories) | Yes | No | No | **Optional** (only with Drive backup) | App functionality (backup) |
 
-Not collected: location, contacts, personal info (the Google email stays on the phone), financial info, health,
-messages, files and docs, calendar, app activity/analytics, web browsing, device IDs, crash logs.
+Why these answers:
+- Pages given to someone go **phone to phone, end-to-end encrypted**; the developer can't read them, so they are not
+  "collected" (Play's exemption for end-to-end encrypted data), and a transfer the user starts to another user is not
+  "sharing".
+- The short connection notes (name, a page's date, network addresses) pass through the sharing service and are
+  deleted within minutes: that's covered by Name above.
+- Supabase (sharing service) and Firebase Cloud Messaging (alerts) are service providers acting for the app, so their
+  use isn't "sharing" either. Drive backup goes to the user's own Drive at their request.
 
-"Shared" stays **No**: sending data to Google Drive at the user's request, on the user's own account, is a transfer
-to a service acting for the user, not sharing with a third party.
+Not collected: location (the Bluetooth permission on Android ≤ 11 is for finding people nearby only), contacts,
+financial info, health, messages, files and docs, calendar, analytics, web browsing, crash logs.
 
 ## Permissions declarations
 - **Microphone (RECORD_AUDIO)**: used only while the user records a voice note. No special declaration form is needed
   for it, but the Data safety answers above cover the recordings.
+- **Nearby devices (BLUETOOTH_SCAN / ADVERTISE)**: to find people beside you on the Shared page; on Android 11 and
+  older Android also needs ACCESS_FINE_LOCATION for Bluetooth scanning (declared with maxSdkVersion 30). No location
+  is read, so no location declaration or background location.
 - No exact-alarm, background-location, SMS/call log, all-files or accessibility permissions are used.

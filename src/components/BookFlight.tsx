@@ -14,13 +14,13 @@ import Animated, {
   type SharedValue,
 } from 'react-native-reanimated';
 import { thudHaptic } from '../lib/haptics';
-import { seededRng, type StickerKind } from '../lib/seeded';
-import { useTheme, withAlpha } from '../theme';
+import { seededRng } from '../lib/seeded';
+import { mixHex, useTheme, withAlpha } from '../theme';
 import { AlbumStack, type DiaryFrame } from './scrapbook/AlbumStack';
 import { BookSpine } from './scrapbook/BookSpine';
 import { Raster } from './scrapbook/Raster';
 import { LiteShadows } from './ThemeProvider';
-import { Sticker } from './scrapbook/Sticker';
+import { Texture } from './scrapbook/Texture';
 
 export interface Flight {
   year: number;
@@ -64,25 +64,41 @@ export function BookFlightProvider({ children }: { children: ReactNode }) {
     },
     [reduceMotion],
   );
+  const finishFlight = useCallback(() => setFlight(null), []);
   const ready = useCallback((year: number) => readyListenerRef.current?.(year), []);
   const value = useMemo(() => ({ fly, flying: flight?.year ?? null, ready }), [fly, flight, ready]);
   return (
     <BookFlightContext.Provider value={value}>
       {children}
-      {flight ? <FlyingDiary flight={flight} readyListenerRef={readyListenerRef} onDone={() => setFlight(null)} /> : null}
+      {flight ? <FlyingDiary flight={flight} readyListenerRef={readyListenerRef} onDone={finishFlight} /> : null}
     </BookFlightContext.Provider>
   );
 }
 
-const SPARKLES = 12;
+const SPARKLES = 7;
+/** What pokes out of a volume (shares of its width/height): a photo, a cassette, airmail letters, a note. */
+/** When the cover is built: a few frames after the spine, before the book is moving fast. */
+const COVER_AT_MS = 90;
+
+const STUFFING = [
+  { kind: 'photo', x: 0.62, y: -0.06, w: 0.26, h: 0.3, r: 8 },
+  { kind: 'tape', x: 0.82, y: 0.3, w: 0.3, h: 0.19, r: -6 },
+  { kind: 'letter', x: 0.15, y: -0.05, w: 0.36, h: 0.22, r: -5 },
+  { kind: 'note', x: 0.84, y: 0.62, w: 0.24, h: 0.2, r: 10 },
+  { kind: 'photo', x: 0.88, y: 0.04, w: 0.22, h: 0.26, r: 16 },
+] as const;
+const STUFF_TAPE = '#1C1C1E';
+const STUFF_PHOTO = '#FBFAF6';
+const STUFF_LETTER = '#F6F4EE';
+const STUFF_RED = '#C8302B';
+const STUFF_BLUE = '#1F4EA0';
 /** One more sparkle is built every so often before the burst, so no frame builds them all. */
 const SPARK_EVERY_MS = 45;
-const SPARKLE_KINDS: readonly StickerKind[] = ['star', 'heart', 'star', 'sun'];
 /** The cover's width on screen when it opens (the open spread is twice this), centred a little above the middle. */
 const COVER_SHARE = 0.42;
 const TARGET_Y = 0.44;
 /** Height of the little arc it floats along on the way. */
-const ARC_PX = 70;
+const ARC_PX = 24;
 const PERSPECTIVE = 1400;
 /** Light falling off a face as it turns away from you. */
 const SHADE = 0.32;
@@ -95,7 +111,7 @@ const PAGE_LINES = 7;
  * 3. it turns like a real box: the spine swings away as the cover swings round on the same edge, each
  *    face darkening as it turns from the light;
  * 4. the cover swings open on its spine and lies flat, showing its lined inside; two pages flutter
- *    over after it; the book slides across to centre the open spread; a warm glow, stars and hearts;
+ *    over after it; the book settles into lamplight, a few specks of paper dust drifting free;
  * 5. meanwhile the year's page has been opened underneath, hidden by the paper, so its loading never
  *    shows; once it has drawn, the book zooms into its right-hand page until that page is the year's
  *    page, and the book fades into it. Its memories stack on after that (the year screen waits for us).
@@ -153,7 +169,8 @@ function FlyingDiary({
   // Zooming into the right page until it fills the screen.
   const pageCx = cx + coverWs / 2;
   const zoom = Math.max(W / coverWs, H / coverHs) * 1.08;
-  const pageColor = theme.dark ? colors.paper : palette.tint;
+  // The right-hand page is a cream diary page; the dive cross-fades from it into the volume's leather page.
+  const pageColor = colors.paper;
 
   const startDive = useCallback(() => {
     if (diving.current) return;
@@ -203,8 +220,11 @@ function FlyingDiary({
       maybeDive();
     };
     // Spread out so no single frame builds much; each stage is in place well before it shows.
-    at(m.pullMs * 0.5, () => setStage(1));
-    at(travelAt + m.travelMs * 0.35, () => setStage(2));
+    // The cover is built just after the spine (not in the same frame), while the book has barely started to move.
+    at(COVER_AT_MS, () => setStage(1));
+    at(travelAt + m.travelMs * 0.3, () => setStage(2));
+    // The inside of the cover on a frame of its own, so the page block and it are never first drawn together.
+    at(travelAt + m.travelMs * 0.55, () => setStage(2.5));
     at(turnAt + m.turnMs * 0.5, () => setStage(3));
     for (let i = 0; i < SPARKLES; i++) at(openAt - m.pageGapMs + i * SPARK_EVERY_MS, () => setSparks(i + 1));
     at(turnAt, () => router.push(`/year/${flight.year}`));
@@ -311,7 +331,7 @@ function FlyingDiary({
 
   const glowSize = coverWs * 2.4;
   const glowStyle = useAnimatedStyle(() => ({
-    opacity: open.get() * 0.85,
+    opacity: open.get() * 0.28,
     transform: [{ scale: 0.6 + open.get() * 0.55 }],
   }));
   // A soft shadow on the paper under the book, gathering as it comes to rest, widening as it opens.
@@ -325,13 +345,13 @@ function FlyingDiary({
     const rng = seededRng(`sparkle-${flight.year}`);
     return Array.from({ length: SPARKLES }, (_, i) => ({
       angle: (i / SPARKLES) * Math.PI * 2 + rng.range(-0.2, 0.2),
-      distance: coverWs * rng.range(0.8, 1.3),
-      size: rng.range(18, 34),
+      distance: coverWs * rng.range(0.5, 1.1),
+      size: rng.range(2, 4),
       spin: rng.range(-90, 90),
-      kind: SPARKLE_KINDS[i % SPARKLE_KINDS.length] ?? 'star',
-      color: i % 3 === 0 ? colors.amber : i % 3 === 1 ? palette.primary : palette.secondary,
+      // Flecks of gold leaf, not stickers.
+      color: i % 2 === 0 ? colors.giltBright : colors.gilt,
     }));
-  }, [flight.year, coverWs, colors.amber, palette.primary, palette.secondary]);
+  }, [flight.year, coverWs, colors.giltBright, colors.gilt]);
 
   const pageTop = cy - coverH / 2;
   const ruled = (
@@ -346,7 +366,7 @@ function FlyingDiary({
   const spineHinge = hinge('left', frame.x + frame.width, frame.y, frame.width, frame.height, frame.height / 2);
   const coverHinge = hinge('right', hingeX, pageTop, flight.width, sizes.albumHeight, coverH / 2);
   const insideHinge = hinge('left', hingeX, pageTop, coverW, coverH, coverH / 2);
-  const sheet = { width: coverW, height: coverH, borderRadius: radii.album, backgroundColor: colors.paperWhite, borderWidth: 0.6, borderColor: withAlpha(palette.ink, 0.25), overflow: 'hidden' as const };
+  const sheet = { width: coverW, height: coverH, borderRadius: 6, backgroundColor: colors.paperWhite, borderWidth: 0.6, borderColor: withAlpha(palette.ink, 0.25), overflow: 'hidden' as const };
 
   return (
     <View pointerEvents="auto" style={StyleSheet.absoluteFill}>
@@ -378,14 +398,39 @@ function FlyingDiary({
           {/* The pages under the cover: edges peeking out, and the first page (the year page in small). */}
           {stage >= 2 ? (
           <Animated.View style={[{ position: 'absolute', left: hingeX, top: pageTop, width: flight.width, height: sizes.albumHeight, transformOrigin: [0, coverH / 2, 0] }, blockStyle]}>
-            {[3, 2, 1].map((layer) => (
-              <View key={layer} style={[sheet, { position: 'absolute', left: edge * layer, top: edge * layer, backgroundColor: layer % 2 ? colors.paperWhite : colors.paper }]} />
+            {/* What it holds, poking out from under the cover: photos, a tape, letters, notes. It is a collection, not a notebook.
+                (Not a GPU texture: inside a turning 3D hinge Android can fall back to a software layer, a frame over a second long.) */}
+            {STUFFING.map((it, i) => (
+              <View
+                key={`stuff-${i}`}
+                style={{
+                  position: 'absolute',
+                  left: flight.width * it.x,
+                  top: sizes.albumHeight * it.y,
+                  width: flight.width * it.w,
+                  height: flight.width * it.h,
+                  backgroundColor: it.kind === 'tape' ? STUFF_TAPE : it.kind === 'photo' ? STUFF_PHOTO : it.kind === 'letter' ? STUFF_LETTER : colors.paper,
+                  borderRadius: it.kind === 'tape' ? 3 : 1,
+                  transform: [{ rotate: `${it.r}deg` }],
+                  boxShadow: '0px 2px 3px rgba(0,0,0,0.3)',
+                  overflow: 'hidden',
+                }}
+              >
+                {it.kind === 'photo' ? <View style={{ flex: 1, margin: 3, marginBottom: 9, backgroundColor: palette.primary, opacity: 0.75 }} /> : null}
+                {it.kind === 'tape' ? <View style={{ margin: 3, height: 8, backgroundColor: colors.paper }} /> : null}
+                {it.kind === 'letter' ? <View style={{ height: 4, backgroundImage: `repeating-linear-gradient(90deg, ${STUFF_RED} 0px, ${STUFF_RED} 6px, ${STUFF_BLUE} 6px, ${STUFF_BLUE} 12px)` }} /> : null}
+              </View>
+            ))}
+            {/* A thick, uneven block of pages: it bulges with everything in it. */}
+            {[6, 5, 4, 3, 2, 1].map((layer) => (
+              <View key={layer} style={[sheet, { position: 'absolute', left: edge * layer + (layer % 3) * 1.5, top: edge * layer - (layer % 2) * 1.5, backgroundColor: layer % 2 ? colors.paperWhite : colors.paper }]} />
             ))}
             <View style={[sheet, { position: 'absolute', left: 0, top: 0, backgroundColor: pageColor, alignItems: 'center', justifyContent: 'center' }]}>
+              <Texture kind="paper" opacity={0.7} />
               <Animated.View style={[{ alignItems: 'center', alignSelf: 'stretch' }, wordsStyle]}>
-                <Text style={[typography.albumYear, { color: palette.primary, textAlign: 'center', alignSelf: 'stretch' }]}>{flight.year}</Text>
+                <Text style={[typography.albumYear, { color: colors.sepia, textAlign: 'center', alignSelf: 'stretch' }]}>{flight.year}</Text>
                 <Text style={[typography.handSmall, { color: colors.inkMuted, textAlign: 'center', alignSelf: 'stretch' }]}>
-                  {flight.count} {flight.count === 1 ? 'memory' : 'memories'}
+                  what life felt like then
                 </Text>
               </Animated.View>
               {/* The gutter: pages curve down into the spine. */}
@@ -394,11 +439,11 @@ function FlyingDiary({
           </Animated.View>
           ) : null}
 
-          {/* The inside of the cover, lying open on the left: a lining in the year's color with a paper pocket. */}
-          {stage >= 2 ? (
+          {/* The inside of the cover, lying open on the left: the volume's leather with a marbled paper pastedown inside a gilt line. */}
+          {stage >= 2.5 ? (
           <Animated.View style={[insideHinge.box, insideStyle]}>
-            <View style={[insideHinge.face, sheet, { backgroundColor: palette.primary, alignItems: 'center', justifyContent: 'center' }]}>
-              <View style={{ width: coverW * 0.78, height: coverH * 0.82, borderRadius: radii.album, backgroundColor: palette.tint, opacity: 0.9 }} />
+            <View style={[insideHinge.face, sheet, { backgroundColor: mixHex(palette.primary, '#000000', 0.62), alignItems: 'center', justifyContent: 'center' }]}>
+              <View style={{ width: coverW * 0.8, height: coverH * 0.84, borderRadius: 3, borderWidth: 1, borderColor: colors.gilt, backgroundColor: mixHex(palette.primary, colors.paper, 0.72), backgroundImage: `radial-gradient(circle at 30% 25%, ${withAlpha(palette.primary, 0.25)} 0%, transparent 40%), radial-gradient(circle at 75% 70%, ${withAlpha(palette.ink, 0.18)} 0%, transparent 45%)` }} />
               <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: colors.ink }, insideShade]} />
             </View>
           </Animated.View>
@@ -423,8 +468,8 @@ function FlyingDiary({
             ink={colors.ink}
             back={
               <Animated.View style={[{ flex: 1, alignItems: 'center', justifyContent: 'center' }, wordsStyle]}>
-                <Text style={[typography.hand, { color: colors.ink, textAlign: 'center', alignSelf: 'stretch' }]}>{`hello again, ${flight.year} `}</Text>
-                <Text style={[typography.handSmall, { color: palette.primary, textAlign: 'center', alignSelf: 'stretch' }]}>✿ ♥ ✿</Text>
+                <Text style={[typography.caption, { color: colors.sepia, textAlign: 'center', alignSelf: 'stretch' }]}>{`a little distance, a different light`}</Text>
+                <View style={{ width: '40%', height: 1, backgroundColor: colors.gilt, opacity: 0.8 }} />
               </Animated.View>
             }
           />
@@ -435,7 +480,7 @@ function FlyingDiary({
           {stage >= 1 ? (
           <Animated.View style={[coverHinge.box, coverStyle]}>
             <View style={coverHinge.face}>
-              <AlbumStack year={flight.year} count={flight.count} width={flight.width} coverUri={null} age={flight.age} raster={false} showLabel={false} coverOnly />
+              <AlbumStack year={flight.year} count={flight.count} width={flight.width} coverUri={null} age={flight.age} raster showLabel={false} coverOnly />
               <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, width: coverW, height: coverH, borderRadius: radii.album, backgroundColor: colors.ink }, coverShade]} />
             </View>
           </Animated.View>
@@ -545,7 +590,6 @@ interface Bit {
   distance: number;
   size: number;
   spin: number;
-  kind: StickerKind;
   color: string;
 }
 
@@ -554,7 +598,7 @@ function SparkleBit({ bit, cx, cy, burst }: { bit: Bit; cx: number; cy: number; 
     const b = burst.get();
     return {
       // Pops out, twinkles, then fades as it drifts on.
-      opacity: b > 0.001 ? Math.min(1, b * 4) * (1 - b * 0.7) : 0,
+      opacity: b > 0.001 ? Math.sin(b * Math.PI) * 0.4 : 0,
       transform: [
         { translateX: Math.cos(bit.angle) * bit.distance * b },
         { translateY: Math.sin(bit.angle) * bit.distance * b - b * 20 },
@@ -566,7 +610,7 @@ function SparkleBit({ bit, cx, cy, burst }: { bit: Bit; cx: number; cy: number; 
   return (
     <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: cx - bit.size / 2, top: cy - bit.size / 2 }, style]}>
       <Raster>
-        <Sticker kind={bit.kind} size={bit.size} color={bit.color} color2={bit.color} />
+        <View style={{ width: bit.size * 0.5, height: bit.size * 0.5, backgroundColor: bit.color, borderRadius: bit.size }} />
       </Raster>
     </Animated.View>
   );

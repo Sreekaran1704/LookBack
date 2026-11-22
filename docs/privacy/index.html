@@ -27,12 +27,13 @@
 <main>
   <div class="card">
     <h1>LookBack privacy policy</h1>
-    <p class="sub">Last updated: 19 November 2026 · applies to the LookBack app for Android (package <code>com.yearbook.app</code>)</p>
+    <p class="sub">Last updated: 23 November 2026 · applies to the LookBack app for Android (package <code>com.yearbook.app</code>)</p>
 
     <p>LookBack is a little journal: you save one small thing a day (a few words, a photo, or a voice note) and the app
       brings it back on the same day next year. It is made by an individual developer. This page explains what the app
       does with your information. The short version: <strong>your memories stay on your phone, and in your own Google
-      Drive only if you switch backup on. We have no servers, no accounts, no ads and no analytics.</strong></p>
+      Drive only if you switch backup on. If you give a page to someone, it goes straight from your phone to theirs.
+      No memory is ever sent to or stored on a server of ours. No ads, no analytics.</strong></p>
 
     <h2>What stays on your phone</h2>
     <ul>
@@ -54,11 +55,35 @@
       <li>The files go straight from your phone to Google over an encrypted connection (HTTPS). The developer never
         receives them and cannot see them.</li>
       <li>Your use of Google Drive is covered by <a href="https://policies.google.com/privacy">Google's privacy policy</a>.</li>
-      <li>You can disconnect at any time in Settings → Backup, and delete the “LookBack” folder from your Drive whenever you like.</li>
+      <li>You can disconnect at any time on the You page, and delete the “LookBack” folder from your Drive whenever you like.</li>
     </ul>
     <p>LookBack's use of information received from Google APIs adheres to the
       <a href="https://developers.google.com/terms/api-services-user-data-policy">Google API Services User Data Policy</a>,
       including the Limited Use requirements.</p>
+
+    <h2>Giving a page to someone (optional)</h2>
+    <p>You can give one of your pages to someone you have added (beside you over Bluetooth, or with their code). The page
+      itself (words, photo, recording) goes <strong>directly from your phone to theirs</strong> over an end-to-end
+      encrypted connection, and is saved only on their phone. It never passes through or is stored on a server.</p>
+    <p>To introduce two phones to each other, LookBack uses a small service of its own (hosted by Supabase), which keeps
+      only this:</p>
+    <ul>
+      <li><strong>Your sharing account</strong>: made when you connect Google, with your Google account's email address
+        and an account id.</li>
+      <li><strong>Your name</strong> as you set it in the app, while you are visible to people beside you (for 10
+        minutes at a time), together with a random Bluetooth code and your phone's public key.</li>
+      <li><strong>Where to send you an alert</strong> (a push address from Firebase Cloud Messaging), so that someone
+        can tell you they have a page for you while LookBack is closed. The alert says only who it is from.</li>
+      <li><strong>A count of alerts</strong> (who alerted whom, and when), kept for one day, to stop anyone flooding a
+        phone with alerts.</li>
+    </ul>
+    <p>Short notes that set up the connection (“I have a page for you from 21 November”, yes / no, and the two phones'
+      network addresses) are passed through this service and deleted within minutes. Like any direct connection, the
+      other phone and Google's connection helper (STUN) see your phone's network (IP) address. Alerts are delivered by
+      Google's Firebase Cloud Messaging.</p>
+    <p>You can stop at any time: <strong>Disconnect</strong> on the You page signs you out, and <strong>Delete sharing
+      account</strong> deletes everything the service keeps about you. Pages people gave you stay on your phone until you
+      delete them.</p>
 
     <h2>Permissions the app asks for</h2>
     <ul>
@@ -66,20 +91,27 @@
       <li><strong>Camera and photos</strong>: only when you choose to take or pick a photo for a memory.</li>
       <li><strong>Notifications</strong>: to remind you, on the day, of memories from earlier years. Reminders are
         scheduled on your phone; no server is involved.</li>
-      <li><strong>Internet</strong>: only for Google sign-in and Drive backup.</li>
+      <li><strong>Nearby devices (Bluetooth)</strong>: only while the Shared page is open, to find people beside you
+        to give pages to. On Android 11 and older, Android calls this a location permission; LookBack never reads your
+        location.</li>
+      <li><strong>Internet</strong>: for Google sign-in, Drive backup, and giving pages to people.</li>
     </ul>
 
-    <h2>Deleting your data</h2>
+    <h2 id="delete">Deleting your data</h2>
     <ul>
       <li>Delete any memory in the app (its photo and voice note go with it). With backup on, it is also removed from
         your Drive at the next backup.</li>
       <li>Uninstall the app to remove everything from your phone.</li>
       <li>Delete the “LookBack” folder in Google Drive to remove your backup.</li>
+      <li>Use <strong>Delete sharing account</strong> on the You page to remove your sharing account and everything the
+        sharing service keeps about you.</li>
+      <li>Can't open the app any more? Ask for your sharing account to be deleted by opening an issue at
+        <a href="https://github.com/Sreekaran1704/LookBack/issues">github.com/Sreekaran1704/LookBack/issues</a> with the
+        email address of the Google account you connected; it is deleted within 7 days.</li>
     </ul>
 
     <h2>Children</h2>
-    <p>LookBack is not directed at children under 13 and does not knowingly collect information from them. It collects
-      nothing for the developer from anyone.</p>
+    <p>LookBack is not directed at children under 13 and does not knowingly collect information from them.</p>
 
     <h2>Changes and contact</h2>
     <p>If this policy changes, the new version will be posted on this page with a new date. Questions? Open an issue at

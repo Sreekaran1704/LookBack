@@ -111,7 +111,7 @@ export function useVoiceRecording(onDone: (draft: VoiceDraft) => void): VoiceRec
  */
 export function VoiceStrip({ rec, value, player, onRemove, accent }: { rec: VoiceRecording; value: VoiceDraft | null; player?: VoicePlayer; onRemove: () => void; accent: string }) {
   const theme = useTheme();
-  const { colors, spacing, sizes, typography } = theme;
+  const { colors, spacing, sizes, typography, nav } = theme;
   const reduceMotion = useReducedMotion();
   const [waveW, setWaveW] = useState(0);
   const pulse = useSharedValue(0);
@@ -134,16 +134,17 @@ export function VoiceStrip({ rec, value, player, onRemove, accent }: { rec: Voic
 
   const lead = rec.recording ? (
     <View style={{ flex: 2.6, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.md }}>
-      <Animated.View style={[{ width: sizes.iconSmall, height: sizes.iconSmall, borderRadius: sizes.iconSmall / 2, backgroundColor: accent }, dotStyle]} />
+      {/* The red recording lamp. */}
+      <Animated.View style={[{ width: sizes.iconSmall, height: sizes.iconSmall, borderRadius: sizes.iconSmall / 2, backgroundColor: colors.wax, borderWidth: 1, borderColor: colors.gilt }, dotStyle]} />
       <View style={{ flex: 1, height: waveH }} onLayout={(e) => setWaveW(e.nativeEvent.layout.width)}>
         {waveW > 0 ? <Waveform wave={liveWave} width={waveW} height={waveH} color={accent} progress={full} playing /> : null}
       </View>
-      <Text style={[typography.label, { color: colors.ink }]}>{formatVoiceMs(rec.elapsed)} </Text>
+      <Text style={[typography.label, { color: nav.ink }]}>{formatVoiceMs(rec.elapsed)} </Text>
     </View>
   ) : value ? (
     <View style={{ flex: 1, alignItems: 'center', gap: 1 }}>
       <Ionicons name="mic" size={sizes.icon} color={accent} />
-      <Text numberOfLines={1} style={[typography.small, { color: colors.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
+      <Text numberOfLines={1} style={[typography.small, { color: nav.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
         {formatVoiceMs(value.ms)}
       </Text>
     </View>

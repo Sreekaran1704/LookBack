@@ -14,20 +14,22 @@ interface Props {
   confirmIcon?: IconName;
   cancelLabel?: string;
   mood?: BuddyMood;
+  /** Only the quiet button (something is under way, or there's nothing to decide). */
+  single?: boolean;
   onConfirm: () => void;
   onCancel: () => void;
 }
 
 /**
- * A question asked on paper instead of a system dialog: a taped card on a dimmed page, the bunny
- * peeking over its top, and two pills (the quiet one keeps things as they are). Tapping outside or the
- * back button is the same as the quiet pill.
+ * A question asked on paper instead of a system dialog: a diary page on the dimmed leather, the diary's stamp
+ * resting on its top edge, and two buttons (the quiet one keeps things as they are). Tapping outside or the back
+ * button is the same as the quiet one.
  */
-export function ConfirmSheet({ visible, title, message, confirmLabel, confirmIcon, cancelLabel = 'Keep it', mood = 'peek', onConfirm, onCancel }: Props) {
+export function ConfirmSheet({ visible, title, message, confirmLabel, confirmIcon, cancelLabel = 'Keep it', mood = 'peek', single = false, onConfirm, onCancel }: Props) {
   const theme = useTheme();
-  const { colors, spacing, sizes, typography, nav } = theme;
+  const { colors, spacing, sizes, typography } = theme;
   const reduceMotion = useReducedMotion();
-  const buddy = sizes.buddy * 1.15;
+  const stamp = sizes.buddy * 0.9;
 
   return (
     <Modal visible={visible} transparent animationType="fade" statusBarTranslucent navigationBarTranslucent onRequestClose={onCancel}>
@@ -40,19 +42,19 @@ export function ConfirmSheet({ visible, title, message, confirmLabel, confirmIco
             entering={sheetIn(reduceMotion)}
             style={{ alignSelf: 'stretch' }}
           >
-            {/* The peek picture ends just under its eyes: let it rest on the card's edge, not behind it. */}
-            <View style={{ alignItems: 'flex-end', paddingRight: spacing.xl, marginBottom: -buddy * 0.02 }}>
-              <Buddy mood={mood} size={buddy} accent={nav.tape} entrance={false} />
+            {/* The diary's cassette, set down on the page's top edge, half over it. */}
+            <View style={{ alignItems: 'center', marginBottom: -stamp * 0.3, zIndex: 2 }}>
+              <Buddy mood={mood === 'peek' ? 'happy' : mood} size={stamp} entrance={false} />
             </View>
-            <Panel seed="confirm" accent={nav.tape} accent2={nav.tape2}>
-              <Text style={[typography.heading, { color: colors.ink }]}>
+            <Panel seed="confirm" style={{ paddingTop: stamp * 0.4 }}>
+              <Text style={[typography.heading, { color: colors.ink, textAlign: 'center', alignSelf: 'stretch' }]}>
                 {title}
                 {HAND_TAIL}
               </Text>
-              <Text style={[typography.caption, { color: colors.inkMuted, marginTop: spacing.sm }]}>{message}</Text>
+              <Text style={[typography.caption, { color: colors.inkMuted, marginTop: spacing.sm, textAlign: 'center', alignSelf: 'stretch' }]}>{message}</Text>
               <View style={[styles.row, { gap: spacing.md, marginTop: spacing.lg, marginBottom: spacing.sm }]}>
                 <PillButton label={cancelLabel} icon="heart-outline" grow onPress={onCancel} />
-                <PillButton label={confirmLabel} icon={confirmIcon} tone="dark" grow onPress={onConfirm} />
+                {single ? null : <PillButton label={confirmLabel} icon={confirmIcon} tone="dark" grow onPress={onConfirm} />}
               </View>
             </Panel>
           </Animated.View>
