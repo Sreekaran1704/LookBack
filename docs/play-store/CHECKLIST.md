@@ -21,7 +21,9 @@ testers who stay opted in for 14 days in a row** before you can apply for produc
 - App **created** (step 4 done, 23 Nov): "LookBack: One Year Ago Today", `com.yearbook.app`, Free. Play Console app id
   `4973736242396013149`. Play's automatic protection (installer check) is on.
 - App signing (step 5 done): Play first made its own key (`08:0C…`); changed to the LookBack key via PEPK before any
-  upload. App signing key SHA-256 is now `05:61:B5:5B…`. Next: step 6 (App content).
+  upload. App signing key SHA-256 is now `05:61:B5:5B…`.
+- App content (step 6 done, 23 Nov): every declaration saved ("You're all caught up"); they go to review with the
+  first release from Publishing overview. Content rating Everyone / PEGI 3 + Users Interact; Data safety adds User IDs.
 - Privacy policy: **online** (https://sreekaran1704.github.io/LookBack/privacy/ loads, checked 23 Nov).
 - Listing text (`listing.md`) rewritten 23 Nov for the leather-diary look (no bunny). **The images in `graphics/`
   are still the old bunny/paper look from 19 Nov** (icon, feature graphic, screenshots): the app icon is now the

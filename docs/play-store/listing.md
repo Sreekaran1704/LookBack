@@ -89,10 +89,12 @@ https://sreekaran1704.github.io/LookBack/privacy/
 ## Content rating (IARC questionnaire)
 - Category: **Reference, News, or Educational**? No — choose **"All Other App Types"**.
 - Violence, sexuality, language, controlled substances, gambling: **No** to all.
-- Does the app let users interact or exchange content with other users? **No.**
+- Does the app let users interact or exchange content with other users? **Yes** (giving a page to someone).
+  Follow-ups: shared content isn't the main content, no public nudity/violence, no block/report/chat moderation,
+  interactions **can be limited to invited friends: Yes**.
 - Does the app share the user's current physical location? **No.**
 - Does the app allow users to purchase digital goods? **No.**
-- Expected result: **Everyone / PEGI 3**.
+- Result (submitted 23 Nov): **Everyone / PEGI 3 / USK all ages / 3+**, interactive element **Users Interact**.
 
 ## Target audience
 - Age groups: **18 and over** (simplest; you may add 13–17). Do **not** pick under-13 groups: that brings the Families policy.
@@ -118,6 +120,7 @@ Data types — mark only these as **Collected** (none as **Shared**):
 | Data type | Collected | Shared | Processed ephemerally | Required or optional | Purpose |
 |---|---|---|---|---|---|
 | Personal info → **Email address** | Yes | No | No | **Optional** (only when you connect Google) | App functionality, Account management |
+| Personal info → **User IDs** (the sharing account id) | Yes | No | No | **Optional** | App functionality, Account management |
 | Personal info → **Name** | Yes | No | No | **Optional** (only while visible to people beside you) | App functionality |
 | Device or other IDs (the push address for alerts) | Yes | No | No | **Optional** | App functionality |
 | Photos and videos → **Photos** | Yes | No | No | **Optional** (only with Drive backup) | App functionality (backup) |
