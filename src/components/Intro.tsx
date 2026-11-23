@@ -207,7 +207,7 @@ export function Intro({ entries, onDone }: Props) {
           <Text numberOfLines={1} style={[typography.title, { color: theme.paper.light, textAlign: 'center', alignSelf: 'stretch' }]}>
             LookBack{' '}
           </Text>
-          <Text style={[typography.caption, { color: withAlpha(theme.paper.light, 0.7), textAlign: 'center', alignSelf: 'stretch' }]}>a diary that writes back</Text>
+          <Text style={[typography.caption, { color: withAlpha(theme.paper.light, 0.7), textAlign: 'center', alignSelf: 'stretch' }]}>memories stay, feelings change</Text>
         </Animated.View>
       </Pressable>
     </Animated.View>

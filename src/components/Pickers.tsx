@@ -1,10 +1,18 @@
 import Ionicons from '@expo/vector-icons/Ionicons';
-import { useEffect, useState } from 'react';
-import { StyleSheet, Text, View } from 'react-native';
-import Animated, { useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { useEffect, useRef, useState } from 'react';
+import { ScrollView, StyleSheet, Text, View, type ScrollViewInstance } from 'react-native';
+import Animated, {
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { selectHaptic } from '../lib/haptics';
-import { PAPERS, useTheme, type Paper, type PaperTone } from '../theme';
+import { PAPERS, useTheme, withAlpha, type Paper, type PaperTone } from '../theme';
 import type { IconName } from './Buttons';
+import { usePageActive } from './PageActive';
+import { holdPager } from './pagerPosition';
 import { PressableScale } from './PressableScale';
 
 export interface ToggleOption<T extends string> {
@@ -41,19 +49,40 @@ export function SlidingToggle<T extends string>({
   }, [index, at, reduceMotion, motion.lift]);
   const pad = spacing.xs;
   const tabW = w > 0 ? (w - pad * 2) / options.length : 0;
-  const tabStyle = useAnimatedStyle(() => ({ transform: [{ translateX: at.get() * tabW }] }));
+  const tabStyle = useAnimatedStyle(() => ({
+    transform: [{ translateX: at.get() * tabW }],
+  }));
   const fill = accent ?? colors.primary;
 
   return (
     <View
       onLayout={(e) => setW(e.nativeEvent.layout.width)}
       accessibilityRole="radiogroup"
-      style={[styles.track, { padding: pad, borderRadius: radii.pill, backgroundColor: colors.paperWhite, boxShadow: theme.shadow(undefined, 0.6) }]}
+      style={[
+        styles.track,
+        {
+          padding: pad,
+          borderRadius: radii.pill,
+          backgroundColor: colors.paperWhite,
+          boxShadow: theme.shadow(undefined, 0.6),
+        },
+      ]}
     >
       {tabW > 0 && found >= 0 ? (
         <Animated.View
           pointerEvents="none"
-          style={[{ position: 'absolute', left: pad, top: pad, bottom: pad, width: tabW, borderRadius: radii.pill, backgroundColor: fill }, tabStyle]}
+          style={[
+            {
+              position: 'absolute',
+              left: pad,
+              top: pad,
+              bottom: pad,
+              width: tabW,
+              borderRadius: radii.pill,
+              backgroundColor: fill,
+            },
+            tabStyle,
+          ]}
         />
       ) : null}
       {options.map((o) => {
@@ -71,9 +100,25 @@ export function SlidingToggle<T extends string>({
             accessibilityLabel={o.label}
             style={[styles.option, { minHeight: sizes.pillHeight, gap: spacing.sm }]}
           >
-            {o.icon ? <Ionicons name={o.icon} size={sizes.iconSmall + 2} color={selected ? colors.onPrimary : colors.inkMuted} /> : null}
+            {o.icon ? (
+              <Ionicons
+                name={o.icon}
+                size={sizes.iconSmall + 2}
+                color={selected ? colors.onPrimary : colors.inkMuted}
+              />
+            ) : null}
             {/* Extra room on the right: Android under-measures Caveat and clips the last letter of a short label ("Ligh"). */}
-            <Text numberOfLines={1} textBreakStrategy="simple" style={[typography.label, { color: selected ? colors.onPrimary : colors.inkMuted, paddingRight: spacing.md }]}>
+            <Text
+              numberOfLines={1}
+              textBreakStrategy="simple"
+              style={[
+                typography.label,
+                {
+                  color: selected ? colors.onPrimary : colors.inkMuted,
+                  paddingRight: spacing.md,
+                },
+              ]}
+            >
               {/* A trailing space: Android under-measures Caveat and clips the last letter of a short label ("Ligh"). */}
               {`${o.label} `}
             </Text>
@@ -84,59 +129,236 @@ export function SlidingToggle<T extends string>({
   );
 }
 
-/** A little swatch of each paper (in the chosen tone), dotted like the page. The chosen one is lifted and checked. */
-export function PaperPicker({ value, tone, onChange }: { value: string; tone: PaperTone; onChange: (paper: string) => void }) {
-  const { spacing } = useTheme();
+/** How far the strip leans over by itself the first time it is shown, so you can see it slides. */
+const NUDGE_PX = 56;
+const NUDGE_DELAY_MS = 700;
+const NUDGE_BACK_MS = 420;
+/** Room inside the strip's ends (for the chosen paper's ring and shadow). */
+const STRIP_PAD = 8;
+const EDGE_SLACK = 4;
+
+/**
+ * A sideways strip of paper swatches (in the chosen tone), dotted like the page; the chosen one is lifted and checked.
+ * It opens centred on the chosen paper, with quiet ink chevrons beside it (never over a swatch, level with the middle of
+ * the swatches, dimmed at an end) and only whole papers in view (the strip is sized to fit them); the first time it's shown it leans over and
+ * back by itself. Dragging it holds the bar pages' swiper still.
+ */
+export function PaperPicker({
+  value,
+  tone,
+  onChange,
+}: {
+  value: string;
+  tone: PaperTone;
+  onChange: (paper: string) => void;
+}) {
+  const { spacing, sizes } = useTheme();
+  const reduceMotion = useReducedMotion();
+  const active = usePageActive();
+  const scroller = useRef<ScrollViewInstance>(null);
+  const [room, setRoom] = useState(0);
+  const [x, setX] = useState(0);
+  const gap = spacing.md;
+  const step = CHIP_W + gap;
+  // The strip is exactly as wide as the whole papers that fit, so none is ever cut off at an edge; the arrows page on.
+  const fit = room > 0 ? Math.max(1, Math.min(PAPERS.length, Math.floor((room - STRIP_PAD * 2 + gap) / step))) : 0;
+  const stripW = fit * step - gap + STRIP_PAD * 2;
+  const max = Math.max(0, PAPERS.length - fit) * step;
+  const index = Math.max(
+    0,
+    PAPERS.findIndex((p) => p.name === value),
+  );
+  // Open with the chosen paper as near the middle as a whole-paper position allows (only the first time).
+  const placed = useRef(false);
+  const [home, setHome] = useState<number | null>(null);
+  useEffect(() => {
+    if (!fit || placed.current) return;
+    placed.current = true;
+    const to = Math.min(max, Math.max(0, (index - Math.floor((fit - 1) / 2)) * step));
+    requestAnimationFrame(() => {
+      scroller.current?.scrollTo({ x: to, animated: false });
+      setHome(to);
+    });
+  }, [fit, max, index, step]);
+  // The first time the page is in front, lean towards the side with more papers and back.
+  const nudged = useRef(false);
+  useEffect(() => {
+    if (!active || home === null || nudged.current || reduceMotion || max <= 0) return undefined;
+    nudged.current = true;
+    const from = home;
+    const to = from + NUDGE_PX <= max ? from + NUDGE_PX : Math.max(0, from - NUDGE_PX);
+    const t1 = setTimeout(() => scroller.current?.scrollTo({ x: to, animated: true }), NUDGE_DELAY_MS);
+    const t2 = setTimeout(
+      () => scroller.current?.scrollTo({ x: from, animated: true }),
+      NUDGE_DELAY_MS + NUDGE_BACK_MS,
+    );
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
+  }, [active, home, max, reduceMotion]);
+  const release = () => holdPager(false);
+  // An arrow turns to the next set of whole papers.
+  const go = (dir: 1 | -1) => {
+    const at = Math.round(x / step) * step;
+    scroller.current?.scrollTo({ x: Math.min(max, Math.max(0, at + dir * fit * step)), animated: true });
+  };
+  const moreLeft = x > EDGE_SLACK;
+  const moreRight = x < max - EDGE_SLACK;
+  const arrowTop = spacing.md + CHIP_H / 2 - arrowSize(sizes.icon) / 2;
   return (
-    <View style={[styles.wrap, { gap: spacing.md }]}>
-      {PAPERS.map((p) => (
-        <PaperChip key={p.name} paper={p} tone={tone} selected={p.name === value} onPress={() => onChange(p.name)} />
-      ))}
+    <View style={styles.stripRow}>
+      {max > 0 ? <Arrow side="left" top={arrowTop} enabled={moreLeft} onPress={() => go(-1)} /> : null}
+      <View style={{ flex: 1, alignItems: 'center' }} onLayout={(e) => setRoom(e.nativeEvent.layout.width)}>
+        {fit ? (
+          <ScrollView
+            ref={scroller}
+            horizontal
+            nestedScrollEnabled
+            showsHorizontalScrollIndicator={false}
+            decelerationRate="fast"
+            snapToInterval={step}
+            scrollEventThrottle={32}
+            onScroll={(e) => setX(Math.round(e.nativeEvent.contentOffset.x))}
+            onTouchStart={() => holdPager(true)}
+            onTouchEnd={release}
+            onTouchCancel={release}
+            onMomentumScrollEnd={release}
+            accessibilityRole="radiogroup"
+            accessibilityHint="Slide sideways for more papers"
+            style={{ width: stripW, flexGrow: 0 }}
+            contentContainerStyle={{ gap, paddingHorizontal: STRIP_PAD, paddingVertical: spacing.md }}
+          >
+            {PAPERS.map((p) => (
+              <PaperChip
+                key={p.name}
+                paper={p}
+                tone={tone}
+                selected={p.name === value}
+                onPress={() => onChange(p.name)}
+              />
+            ))}
+          </ScrollView>
+        ) : null}
+      </View>
+      {max > 0 ? <Arrow side="right" top={arrowTop} enabled={moreRight} onPress={() => go(1)} /> : null}
     </View>
   );
 }
 
-const STITCH = 5;
+const arrowSize = (icon: number) => icon;
 
-function PaperChip({ paper, tone, selected, onPress }: { paper: Paper; tone: PaperTone; selected: boolean; onPress: () => void }) {
-  const theme = useTheme();
-  const { colors, sizes, radii, typography, spacing } = theme;
-  const s = sizes.paperChip;
-  const dark = tone === 'dark';
+/**
+ * An arrow beside one end of the strip: a bare ink chevron (no badge or ring; it sits on the paper card, so ink, not
+ * gilt), level with the middle of the swatches, with a generous touch area. Dimmed at that end.
+ */
+function Arrow({
+  side,
+  top,
+  enabled,
+  onPress,
+}: {
+  side: 'left' | 'right';
+  top: number;
+  enabled: boolean;
+  onPress: () => void;
+}) {
+  const { colors, sizes } = useTheme();
+  const left = side === 'left';
+  const d = arrowSize(sizes.icon);
   return (
-    <PressableScale onPress={onPress} accessibilityRole="radio" accessibilityState={{ selected }} accessibilityLabel={`${paper.label} paper`}>
-      <View style={{ alignItems: 'center', gap: spacing.xxs, width: s + spacing.sm }}>
+    <PressableScale
+      onPress={onPress}
+      disabled={!enabled}
+      accessibilityRole="button"
+      accessibilityLabel={left ? 'Earlier papers' : 'More papers'}
+      hitSlop={{ top: 24, bottom: 24, left: 12, right: 12 }}
+      style={{ marginTop: top, width: d, height: d, alignItems: 'center', justifyContent: 'center' }}
+    >
+      <Ionicons name={left ? 'chevron-back' : 'chevron-forward'} size={d} color={withAlpha(colors.ink, 0.7)} />
+    </PressableScale>
+  );
+}
+
+/** A paper sample: a small portrait card of the paper, ringed in ink when it is the one chosen. */
+const SWATCH_W = 50;
+const SWATCH_H = 66;
+const RING_GAP = 3;
+const RING_W = 1.5;
+const CHIP_W = SWATCH_W + (RING_GAP + RING_W) * 2;
+const CHIP_H = SWATCH_H + (RING_GAP + RING_W) * 2;
+
+function PaperChip({
+  paper,
+  tone,
+  selected,
+  onPress,
+}: {
+  paper: Paper;
+  tone: PaperTone;
+  selected: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  const { colors, typography, spacing } = theme;
+  const dark = tone === 'dark';
+  const face = dark ? paper.dark : paper.light;
+  return (
+    <PressableScale
+      onPress={onPress}
+      accessibilityRole="radio"
+      accessibilityState={{ selected }}
+      accessibilityLabel={`${paper.label} paper`}
+    >
+      <View style={{ alignItems: 'center', gap: spacing.xs, width: CHIP_W }}>
         <View
           style={{
-            width: s,
-            height: s,
-            borderRadius: radii.paper * 2,
-            backgroundColor: dark ? paper.dark : paper.light,
-            borderWidth: selected ? 3 : 1,
-            borderColor: selected ? colors.ink : colors.inkFaint,
-            boxShadow: theme.shadow(undefined, selected ? 1.2 : 0.5),
-            transform: [{ rotate: selected ? '-4deg' : '0deg' }, { scale: selected ? 1.06 : 1 }],
-            alignItems: 'center',
-            justifyContent: 'center',
+            padding: RING_GAP,
+            borderRadius: 6 + RING_GAP,
+            borderWidth: RING_W,
+            borderColor: selected ? colors.ink : 'transparent',
           }}
         >
-          {/* The printed dots, as on the page, and a folded corner. */}
-          <View style={{ position: 'absolute', top: STITCH, left: STITCH, right: STITCH, bottom: STITCH, flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'space-around', alignContent: 'space-around' }}>
-            {Array.from({ length: 16 }, (_, i) => (
-              <View key={i} style={{ width: '25%', alignItems: 'center' }}>
-                <View style={{ width: 3, height: 3, borderRadius: 2, backgroundColor: paper.dots, opacity: dark ? 0.5 : 0.6 }} />
-              </View>
-            ))}
+          {/* The sample: the paper lit from the top left, a hairline edge, and a thin tooled rule inside. */}
+          <View
+            style={{
+              width: SWATCH_W,
+              height: SWATCH_H,
+              borderRadius: 6,
+              backgroundColor: face,
+              backgroundImage: `linear-gradient(160deg, ${withAlpha('#FFFFFF', dark ? 0.08 : 0.35)} 0%, ${withAlpha('#FFFFFF', 0)} 50%, ${dark ? withAlpha('#000000', 0.18) : paper.lightDeep} 100%)`,
+              borderWidth: StyleSheet.hairlineWidth * 2,
+              borderColor: withAlpha(colors.ink, dark ? 0.35 : 0.3),
+              boxShadow: theme.shadow(undefined, dark ? 0.5 : 0.8),
+            }}
+          >
+            <View
+              style={{
+                position: 'absolute',
+                top: 5,
+                left: 5,
+                right: 5,
+                bottom: 5,
+                borderRadius: 3,
+                borderWidth: StyleSheet.hairlineWidth * 2,
+                borderColor: withAlpha(dark ? paper.giltNight : paper.giltDay, dark ? 0.55 : 0.75),
+              }}
+            />
           </View>
-          <View style={{ position: 'absolute', right: 0, bottom: 0, width: 14, height: 14, borderTopLeftRadius: 4, borderBottomRightRadius: radii.paper * 2, backgroundColor: dark ? paper.darkDeep : paper.lightDeep, boxShadow: '-1px -1px 2px rgba(0,0,0,0.15)' }} />
-          {selected ? (
-            <View style={[styles.check, { backgroundColor: colors.primary, borderColor: colors.paperWhite }]}>
-              <Ionicons name="checkmark" size={sizes.iconSmall} color={colors.onPrimary} />
-            </View>
-          ) : null}
         </View>
-        {/* Full width + centred: a shrink-wrapped Caveat label gets under-measured on Android. */}
-        <Text numberOfLines={1} style={[typography.small, { alignSelf: 'stretch', textAlign: 'center', color: colors.ink, paddingRight: 0 }]}>
+        {/* Full width + centred: a shrink-wrapped label gets under-measured on Android. */}
+        <Text
+          numberOfLines={1}
+          style={[
+            typography.small,
+            {
+              alignSelf: 'stretch',
+              textAlign: 'center',
+              color: selected ? colors.ink : colors.inkMuted,
+              paddingRight: 0,
+            },
+          ]}
+        >
           {paper.label}
         </Text>
       </View>
@@ -146,7 +368,11 @@ function PaperChip({ paper, tone, selected, onPress }: { paper: Paper; tone: Pap
 
 const styles = StyleSheet.create({
   track: { flexDirection: 'row', alignItems: 'center' },
-  option: { flex: 1, flexDirection: 'row', alignItems: 'center', justifyContent: 'center' },
-  wrap: { flexDirection: 'row', flexWrap: 'wrap', justifyContent: 'center' },
-  check: { position: 'absolute', right: -8, top: -8, width: 26, height: 26, borderRadius: 13, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  stripRow: { flexDirection: 'row', alignItems: 'flex-start' },
+  option: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

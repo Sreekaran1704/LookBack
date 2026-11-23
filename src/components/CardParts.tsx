@@ -9,13 +9,13 @@ import { HAND_TAIL } from './Screen';
 
 /** The pieces a settings-style paper card is made of (Settings and You): its heading, help lines and rows. */
 
-/** A page's heading: its icon tooled in gilt on a small leather disc, and the title in gilt italic's ink-on-paper twin. */
+/** A page's heading: its icon in the card's paper color on a small solid ink disc, and the title in ink. */
 export function CardTitle({ icon, title }: { icon: IconName; title: string; color?: string }) {
   const { colors, spacing, typography, sizes } = useTheme();
   return (
     <View style={[styles.row, { gap: spacing.md, marginBottom: spacing.sm }]}>
-      <View style={[styles.badge, { backgroundColor: colors.desk, borderWidth: 1.5, borderColor: colors.gilt, width: sizes.icon * 1.7, height: sizes.icon * 1.7, borderRadius: sizes.icon }]}>
-        <Ionicons name={icon} size={sizes.iconSmall + 1} color={colors.giltBright} />
+      <View style={[styles.badge, { backgroundColor: colors.ink, width: sizes.icon * 1.6, height: sizes.icon * 1.6, borderRadius: sizes.icon }]}>
+        <Ionicons name={icon} size={sizes.iconSmall + 1} color={colors.panel} />
       </View>
       <Text style={[typography.heading, { color: colors.ink, flex: 1 }]}>
         {title}

@@ -24,13 +24,14 @@ export interface PaperTab {
   accessibilityLabel?: string;
   /** A small count on the icon (new pages given to you). */
   badge?: number;
+  /** A picture in place of the icon (the You page: your portrait), and how tall it is. Drawn once, not per ink. */
+  picture?: { node: ReactNode; height: number };
 }
 
 /** The bar holds an icon over a label, so it is a little taller than a one-line control. */
 const BAR_H = 60;
 const ICON = 21;
 /** The thread's thickness. */
-const THREAD = 1.3;
 /** How strong the ink is on the places you're not on (the one you're on is full ink, bold, on the wash). */
 const MUTED_INK = 0.74;
 
@@ -132,45 +133,72 @@ export function PaperTabs({
 }
 
 /**
- * A row of hand stitches just inside an edge: a dashed waxed thread with a faint shade under each stitch, the way
- * thread sits on paper. Shared by every control.
+ * Hand stitches just inside an edge: a dashed waxed thread with a faint shade under each stitch. Only the You page's
+ * account buttons (Back up, Disconnect…) keep it; the person liked them stitched.
  */
-export function Stitches({ radius = control.radius, inset = control.stitchInset, color }: { radius?: number; inset?: number; color?: string }) {
+export function ThreadStitches({ radius = control.radius, inset = control.stitchInset }: { radius?: number; inset?: number }) {
   const { colors } = useTheme();
-  const thread = color ?? colors.giltBright;
   return (
     <>
       <View pointerEvents="none" style={{ position: 'absolute', left: inset, right: inset, top: inset + 0.8, bottom: inset - 0.8, borderRadius: Math.max(0, radius - inset), borderWidth: THREAD, borderStyle: 'dashed', borderColor: withAlpha(colors.ink, 0.1) }} />
-      <View pointerEvents="none" style={{ position: 'absolute', left: inset, right: inset, top: inset, bottom: inset, borderRadius: Math.max(0, radius - inset), borderWidth: THREAD, borderStyle: 'dashed', borderColor: withAlpha(thread, 0.6) }} />
+      <View pointerEvents="none" style={{ position: 'absolute', left: inset, right: inset, top: inset, bottom: inset, borderRadius: Math.max(0, radius - inset), borderWidth: THREAD, borderStyle: 'dashed', borderColor: withAlpha(colors.giltBright, 0.6) }} />
     </>
+  );
+}
+const THREAD = 1.3;
+/** The tilt of a marker stroke, for the stitched account buttons. */
+const MARKER_TILT = '-1.5deg';
+
+/** A fine tooled rule just inside a control's edge (the name is kept from when it was hand stitching). */
+export function Stitches({ radius = control.radius, inset = control.stitchInset, color }: { radius?: number; inset?: number; color?: string }) {
+  const { colors } = useTheme();
+  const line = color ?? colors.gilt;
+  // Was a dashed waxed thread; now one fine tooled rule just inside the edge, like the gilt rule on the paper covers.
+  return (
+    <View
+      pointerEvents="none"
+      style={{ position: 'absolute', left: inset, right: inset, top: inset, bottom: inset, borderRadius: Math.max(0, radius - inset), borderWidth: StyleSheet.hairlineWidth * 2, borderColor: withAlpha(line, 0.45) }}
+    />
   );
 }
 
 /**
- * A highlighter swipe: a soft wash, a little deeper along its foot, the way a marker leaves more ink at the end of a
- * stroke. With `edge` (the bar's page you're on) it's lighter and outlined in the same color, so it reads as a clear
- * place rather than a dark patch under the ink.
+ * What's chosen or what matters: a flat, quiet tint. With `edge` (the bar's page you're on) it's lighter and outlined
+ * by a fine line of the same color, so it reads as a clear place rather than a dark patch under the ink.
  */
-export function Wash({ color, edge = false }: { color: string; edge?: boolean }) {
+export function Wash({ color, edge = false, marker = false }: { color: string; edge?: boolean; marker?: boolean }) {
+  if (marker) {
+    // The old highlighter stroke: a little deeper along its foot, the way a marker leaves more ink at the end.
+    return (
+      <View
+        style={{
+          flex: 1,
+          borderRadius: control.radius - control.washInset + 2,
+          backgroundColor: withAlpha(color, 0.26),
+          backgroundImage: `linear-gradient(180deg, ${withAlpha(color, 0)} 0%, ${withAlpha(color, 0.16)} 100%)`,
+        }}
+      />
+    );
+  }
+  // A flat, quiet tint (no deeper foot, no tilt); with `edge` a fine line of the same color round it.
   return (
     <View
       style={{
         flex: 1,
         borderRadius: control.radius - control.washInset + 2,
-        backgroundColor: withAlpha(color, edge ? 0.14 : 0.26),
-        backgroundImage: `linear-gradient(180deg, ${withAlpha(color, 0)} 0%, ${withAlpha(color, edge ? 0.1 : 0.16)} 100%)`,
-        borderWidth: edge ? 1.5 : 0,
-        borderColor: withAlpha(color, 0.7),
+        backgroundColor: withAlpha(color, edge ? 0.12 : 0.2),
+        borderWidth: edge ? StyleSheet.hairlineWidth * 2 : 0,
+        borderColor: withAlpha(color, 0.6),
       }}
     />
   );
 }
 
 /** The wash laid on inside a control, the same distance in and at the same angle everywhere. */
-export function WashIn({ color, insetY = control.washInset, edge = false }: { color: string; insetY?: number; edge?: boolean }) {
+export function WashIn({ color, insetY = control.washInset, edge = false, marker = false }: { color: string; insetY?: number; edge?: boolean; marker?: boolean }) {
   return (
-    <View pointerEvents="none" style={{ position: 'absolute', left: control.washInset, right: control.washInset, top: insetY, bottom: insetY, transform: [{ rotate: control.washTilt }] }}>
-      <Wash color={color} edge={edge} />
+    <View pointerEvents="none" style={{ position: 'absolute', left: control.washInset, right: control.washInset, top: insetY, bottom: insetY, transform: [{ rotate: marker ? MARKER_TILT : control.washTilt }] }}>
+      <Wash color={color} edge={edge} marker={marker} />
     </View>
   );
 }
@@ -186,10 +214,20 @@ function BarItem({ tab, index, slide, barH }: { tab: PaperTab; index: number; sl
   const litStyle = useAnimatedStyle(() => ({ opacity: slide ? Math.max(0, 1 - Math.abs(slide.get() - index)) : 1 }));
   // The same line drawing whether you're on the page or not (a filled one turned into a dark blob, worst at night and
   // under a badge): the page you're on is told by full ink, a bold label and its outlined wash.
-  const content = (color: string, lit: boolean) => (
+  // With a picture, the lit copy (laid over the plain one while the pages slide) leaves a gap where it sits, so the
+  // picture is drawn once and only the label changes ink.
+  const content = (color: string, lit: boolean, overlay = false) => (
     <View style={{ alignItems: 'center', alignSelf: 'stretch' }}>
       <View>
-        <Ionicons name={tab.icon} size={iconSize} color={tab.tint && !tab.primary ? tab.tint : color} />
+        {tab.picture ? (
+          // The picture takes an icon's room (so its label lines up with the others), sitting on the same line as the
+          // icons and standing up out of the top if it's taller.
+          <View style={{ height: iconSize, justifyContent: 'flex-end', alignItems: 'center' }}>
+            {overlay ? null : <View style={{ marginTop: iconSize - tab.picture.height }}>{tab.picture.node}</View>}
+          </View>
+        ) : (
+          <Ionicons name={tab.icon} size={iconSize} color={tab.tint && !tab.primary ? tab.tint : color} />
+        )}
         {tab.badge ? (
           <View style={{ position: 'absolute', top: -5, right: -11, minWidth: 17, height: 17, borderRadius: 9, paddingHorizontal: 4, backgroundColor: colors.sepia, alignItems: 'center', justifyContent: 'center', borderWidth: 1.5, borderColor: bg }}>
             <Text style={{ color: colors.paperWhite, fontSize: 10, lineHeight: 12, fontWeight: '700' }}>{tab.badge > 9 ? '9+' : tab.badge}</Text>
@@ -217,7 +255,7 @@ function BarItem({ tab, index, slide, barH }: { tab: PaperTab; index: number; sl
       {slide ? (
         <>
           {content(muted, false)}
-          <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, litStyle]}>{content(ink, true)}</Animated.View>
+          <Animated.View style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center' }, litStyle]}>{content(ink, true, true)}</Animated.View>
         </>
       ) : (
         content(on ? ink : muted, on)

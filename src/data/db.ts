@@ -84,6 +84,11 @@ const MIGRATIONS: readonly string[] = [
   // v9: each person's phone key (identity.ts), learned from their code or the first page they gave; pages' connections
   // are signed with it, so even LookBack's server can't step in between.
   `ALTER TABLE people ADD COLUMN public_key TEXT;`,
+  // v10: each person's portrait code (lib/portrait.ts), from the pages they give; a page keeps the one it came with.
+  `
+  ALTER TABLE people ADD COLUMN portrait TEXT;
+  ALTER TABLE received_letters ADD COLUMN sender_portrait TEXT;
+  `,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;

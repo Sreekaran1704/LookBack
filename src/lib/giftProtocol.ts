@@ -17,6 +17,7 @@
  */
 
 import { isPublicKey, isSignature } from './identity';
+import { parsePortrait } from './portrait';
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -66,6 +67,8 @@ export interface GiftHeader {
   voiceMs: number | null;
   photo: GiftFile | null;
   voice: GiftFile | null;
+  /** The giver's portrait code (lib/portrait.ts); null from an older app, or when it doesn't read. */
+  portrait: string | null;
 }
 
 const str = (v: unknown, max: number): v is string => typeof v === 'string' && v.length <= max;
@@ -150,7 +153,8 @@ export function parseHeader(raw: unknown, gift: string): GiftHeader | null {
   if (photo === undefined || voice === undefined) return null;
   const voiceTitle = str(h.voiceTitle, TITLE_MAX) && h.voiceTitle.trim() ? h.voiceTitle.trim() : null;
   const voiceMs = typeof h.voiceMs === 'number' && Number.isFinite(h.voiceMs) && h.voiceMs >= 0 ? Math.round(h.voiceMs) : null;
-  return { t: 'header', gift, name: cleanName(h.name), date: h.date, body: h.body, voiceTitle, voiceMs, photo, voice };
+  const portrait = parsePortrait(h.portrait) ? (h.portrait as string) : null;
+  return { t: 'header', gift, name: cleanName(h.name), date: h.date, body: h.body, voiceTitle, voiceMs, photo, voice, portrait };
 }
 
 /** Where incoming bytes go, in order: the photo's bytes first, then the voice's. */

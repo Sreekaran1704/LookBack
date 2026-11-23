@@ -7,7 +7,9 @@ import { ConfirmSheet } from '../../components/ConfirmSheet';
 import { HardwareButton } from '../../components/Hardware';
 import { useNavScroll } from '../../components/NavBar';
 import { PressableScale } from '../../components/PressableScale';
+import { PersonSeal } from '../../components/PersonSeal';
 import { PageFooter, PageHeader, Panel, usePageContentStyle } from '../../components/Screen';
+import { LookCard, ReminderCard } from '../../components/SettingsCards';
 import { useStatusPill } from '../../components/StatusPill';
 import { PaperBackground } from '../../components/scrapbook/PaperBackground';
 import { accountRepository, backupRepository, settingsRepository, type AccountStatus, type BackupStatus } from '../../data';
@@ -17,8 +19,8 @@ import { formatDisplayDate, parseLocalDate, toLocalDate } from '../../lib/dates'
 import { useTheme, type YearPalette } from '../../theme';
 
 /**
- * You: your name, your Google account (one connection: your Drive backup, and who you are when people give you pages),
- * the people and pages passed between you, and the way into Settings.
+ * You: your name, the look and reminders, the way into Settings, your Google account (one connection: your Drive
+ * backup, and who you are when people give you pages), and the people and pages passed between you.
  */
 function YouScreen() {
   const theme = useTheme();
@@ -32,21 +34,23 @@ function YouScreen() {
       <PaperBackground variant="dots" desk />
       <Animated.ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={pageContent} onScroll={onScroll} scrollEventThrottle={16}>
         <PageHeader title="You" subtitle={name ? `${name}'s diary` : 'whose diary is this?'} accent={palette.primary} />
-        <NameCard palette={palette} name={name} />
-        <AccountCard palette={palette} />
-        <PeopleCard palette={palette} />
+        <NameCard palette={palette} name={name} portrait={profile?.portrait ?? null} />
+        <LookCard palette={palette} />
+        <ReminderCard palette={palette} />
         <Panel seed="settings" accent={palette.primary} accent2={palette.secondary}>
           <CardTitle icon="settings-outline" title="Settings" />
-          <Help>The paper and its tone, reminders, and about the diary.</Help>
+          <Help>About the diary, and reading the first page again.</Help>
           <ActionRow label="Open settings" divider onPress={() => router.push('/settings')} />
         </Panel>
+        <AccountCard palette={palette} />
+        <PeopleCard palette={palette} />
         <PageFooter label="you · your account" />
       </Animated.ScrollView>
     </View>
   );
 }
 
-function NameCard({ palette, name }: { palette: YearPalette; name: string }) {
+function NameCard({ palette, name, portrait }: { palette: YearPalette; name: string; portrait: string | null }) {
   const { colors, spacing, typography } = useTheme();
   // Plain text until tapped: a text box on a bar page gets focus whenever the page appears (a stall, and sometimes the
   // keyboard popping up by itself).
@@ -59,8 +63,17 @@ function NameCard({ palette, name }: { palette: YearPalette; name: string }) {
   };
   return (
     <Panel seed="you" accent={palette.primary} accent2={palette.secondary}>
-      <CardTitle icon="happy-outline" title="Your name" />
-      <Row label="Name">
+      <CardTitle icon="happy-outline" title="You" />
+      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.lg, paddingVertical: spacing.sm }}>
+        <PressableScale onPress={() => router.push('/portrait')} accessibilityRole="button" accessibilityLabel="Your portrait. Tap to change it">
+          <PersonSeal name={name} portrait={portrait} size={96} />
+        </PressableScale>
+        <View style={{ flex: 1 }}>
+          <Text style={[typography.caption, { color: colors.inkMuted }]}>{portrait ? 'Your portrait, on the pages you give.' : 'Make a portrait of yourself for the pages you give.'}</Text>
+        </View>
+      </View>
+      <ActionRow label={portrait ? 'Change your portrait' : 'Make your portrait'} divider onPress={() => router.push('/portrait')} />
+      <Row label="Name" divider>
         {editing ? (
           <TextInput
             value={draft}

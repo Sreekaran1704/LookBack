@@ -232,7 +232,8 @@ export const control = {
   height: 52,
   stitchInset: 4,
   washInset: 6,
-  washTilt: '-1.5deg',
+  /** The wash lies square: a tilted highlighter stroke read as craft, not as a bound diary. */
+  washTilt: '0deg',
 } as const;
 
 export const radii = {

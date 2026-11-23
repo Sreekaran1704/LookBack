@@ -16,11 +16,15 @@ export interface Person {
   addedAt: string;
   /** Their phone's key (identity.ts), or null until it's learned. */
   publicKey: string | null;
+  /** Their portrait's code (lib/portrait.ts), from their latest page; null until they give one. */
+  portrait: string | null;
 }
 export interface ReceivedLetter {
   id: string;
   senderId: string;
   senderName: string;
+  /** The giver's portrait code as it was on this page (null from an older app). */
+  senderPortrait: string | null;
   memoryDate: string;
   body: string;
   voiceTitle: string | null;
@@ -45,6 +49,7 @@ interface LetterRow {
   id: string;
   sender_id: string;
   sender_name: string;
+  sender_portrait: string | null;
   memory_date: string;
   body: string;
   voice_title: string | null;
@@ -58,6 +63,7 @@ const toLetter = (r: LetterRow): ReceivedLetter => ({
   id: r.id,
   senderId: r.sender_id,
   senderName: r.sender_name,
+  senderPortrait: r.sender_portrait ?? null,
   memoryDate: r.memory_date,
   body: r.body,
   voiceTitle: r.voice_title,
@@ -73,8 +79,8 @@ export const sharingRepository = {
 
   async people(): Promise<Person[]> {
     const db = await getDb();
-    const rows = await db.getAllAsync<{ id: string; name: string; added_at: string; public_key: string | null }>('SELECT * FROM people ORDER BY name COLLATE NOCASE');
-    return rows.map((r) => ({ id: r.id, name: r.name, addedAt: r.added_at, publicKey: r.public_key }));
+    const rows = await db.getAllAsync<{ id: string; name: string; added_at: string; public_key: string | null; portrait: string | null }>('SELECT * FROM people ORDER BY name COLLATE NOCASE');
+    return rows.map((r) => ({ id: r.id, name: r.name, addedAt: r.added_at, publicKey: r.public_key, portrait: r.portrait ?? null }));
   },
   async person(id: string): Promise<Person | null> {
     return (await sharingRepository.people()).find((p) => p.id === id.toLowerCase()) ?? null;
@@ -96,6 +102,12 @@ export const sharingRepository = {
       key,
       trust,
     );
+    changes.emit();
+  },
+  /** Keeps the portrait someone's page came with (a newer page brings their newer portrait). */
+  async setPortrait(id: string, portrait: string): Promise<void> {
+    const db = await getDb();
+    await db.runAsync('UPDATE people SET portrait = ? WHERE id = ?', portrait, id.toLowerCase());
     changes.emit();
   },
   async removePerson(id: string): Promise<void> {
@@ -133,11 +145,12 @@ export const sharingRepository = {
   async keepLetter(letter: Omit<ReceivedLetter, 'receivedAt' | 'openedAt'>): Promise<void> {
     const db = await getDb();
     await db.runAsync(
-      `INSERT OR REPLACE INTO received_letters (id, sender_id, sender_name, memory_date, body, voice_title, voice_ms, photo_path, voice_path, received_at, opened_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
+      `INSERT OR REPLACE INTO received_letters (id, sender_id, sender_name, sender_portrait, memory_date, body, voice_title, voice_ms, photo_path, voice_path, received_at, opened_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL)`,
       letter.id,
       letter.senderId,
       letter.senderName,
+      letter.senderPortrait,
       letter.memoryDate,
       letter.body,
       letter.voiceTitle,

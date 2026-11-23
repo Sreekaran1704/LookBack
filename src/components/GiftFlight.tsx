@@ -22,7 +22,9 @@ import { arriveHaptic, rejectHaptic, successHaptic } from '../lib/haptics';
 import { useTheme, withAlpha } from '../theme';
 import type { GiftProblem } from '../data/social/postman';
 import { PillButton } from './Buttons';
-import { personColor } from './PersonSeal';
+import { usePeople } from '../hooks/useSharing';
+import { portraitFor } from '../lib/portrait';
+import { FilmPortrait } from './scrapbook/FilmPortrait';
 import { Texture } from './scrapbook/Texture';
 
 /**
@@ -35,6 +37,8 @@ import { Texture } from './scrapbook/Texture';
 export type FlightState = 'waiting' | 'connecting' | 'moving' | 'done' | 'failed' | 'declined';
 
 const SEAL = 112;
+/** Their portrait's height inside the rings (its corners just clear the progress ring). */
+const PORTRAIT_H = 100;
 const RING_R = SEAL / 2 + 10;
 const RING_SIZE = RING_R * 2 + 8;
 const RIPPLES = 3;
@@ -98,7 +102,7 @@ export function GiftFlight({
   visible: boolean;
   /** 'out': you're giving it; 'in': it's coming to you. */
   direction: 'out' | 'in';
-  /** The other person (their id gives their seal its color). */
+  /** The other person (their portrait is looked up by their id). */
   personId?: string;
   name: string;
   /** The page's date, as it's written on the card. */
@@ -114,6 +118,7 @@ export function GiftFlight({
   onOpen?: () => void;
 }) {
   const theme = useTheme();
+  const person = usePeople().find((p) => p.id === personId);
   const { colors, typography, spacing } = theme;
   const insets = useSafeAreaInsets();
   const { height } = useWindowDimensions();
@@ -232,10 +237,9 @@ export function GiftFlight({
               <Ripple key={i} index={i} on={live && !reduceMotion} color={colors.gilt} />
             ))}
             <ProgressRing progress={ring} color={colors.gilt} track={withAlpha(colors.paperWhite, 0.15)} />
-            <View style={{ width: SEAL, height: SEAL, borderRadius: SEAL / 2, backgroundColor: personId ? personColor(theme, personId) : colors.panel, alignItems: 'center', justifyContent: 'center', overflow: 'hidden', boxShadow: theme.shadow(undefined, 1.4) }}>
-              <Texture kind="paper" opacity={0.3} radius={SEAL / 2} />
-              <Text style={[typography.title, { color: personId ? '#FFFFFF' : colors.ink, fontSize: 48, lineHeight: 58 }]}>{name.slice(0, 1).toUpperCase()}</Text>
-              <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { alignItems: 'center', justifyContent: 'center', backgroundColor: withAlpha(colors.green, 0.92) }, tickStyle]}>
+            <View style={{ alignItems: 'center', justifyContent: 'center', boxShadow: theme.shadow(undefined, 1.4) }}>
+              <FilmPortrait portrait={portraitFor(person?.portrait, name)} size={PORTRAIT_H} hole={theme.paper.darkDeep} />
+              <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { borderRadius: 3, alignItems: 'center', justifyContent: 'center', backgroundColor: withAlpha(colors.green, 0.92) }, tickStyle]}>
                 <Ionicons name="checkmark" size={58} color={colors.paperWhite} />
               </Animated.View>
             </View>

@@ -17,11 +17,19 @@ testers who stay opted in for 14 days in a row** before you can apply for produc
 ---
 
 ## Status (23 Nov 2026)
-- Developer account: **not created yet** (step 3).
-- Privacy policy: updated for sharing (Supabase introductions, Firebase alerts, delete sharing account) but **not
-  online yet** (step 1 gives a 404 until Pages is on).
-- Google sign-in: still **Testing** (test users: sreekaran.2021@gmail.com, geetharan871@gmail.com). Do step 2 before
-  the closed test, or every tester has to be added as a test user too.
+- Developer account: **created and verified** (step 3 done).
+- App **created** (step 4 done, 23 Nov): "LookBack: One Year Ago Today", `com.yearbook.app`, Free. Play Console app id
+  `4973736242396013149`. Play's automatic protection (installer check) is on.
+- App signing (step 5 done): Play first made its own key (`08:0C…`); changed to the LookBack key via PEPK before any
+  upload. App signing key SHA-256 is now `05:61:B5:5B…`. Next: step 6 (App content).
+- Privacy policy: **online** (https://sreekaran1704.github.io/LookBack/privacy/ loads, checked 23 Nov).
+- Listing text (`listing.md`) rewritten 23 Nov for the leather-diary look (no bunny). **The images in `graphics/`
+  are still the old bunny/paper look from 19 Nov** (icon, feature graphic, screenshots): the app icon is now the
+  cassette. You're making the new ones yourself.
+- Bundle `release/LookBack-1.3.0.aab`: signer checked, SHA-256 `05:61:B5:5B…` (the LookBack key).
+- Google sign-in: **In production** (published 23 Nov; step 2 done). Branding has the name, support email, home page
+  and privacy link on the authorized domain `sreekaran1704.github.io`, no logo. The "LookBack release" Android client
+  has the LookBack key's SHA-1 `BC:31:F7…:CD`.
 - Data safety now includes email, name and the alert push address, and an account-deletion URL (see `listing.md`).
 - Account deletion requests from the web (people who can't open the app): you promise to handle them within 7 days.
   Delete them in Supabase → Authentication → Users (that cascades to everything the sharing service keeps).

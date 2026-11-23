@@ -12,46 +12,43 @@ LookBack: One Year Ago Today
 ## Short description (max 80)
 
 ```
-One tiny moment a day, words, photo or voice. Meet it again next year. ✿
+One small thing a day, in words, a photo or your voice. Meet it again next year.
 ```
-(73 characters)
+(80 characters)
 
 ## Full description (max 4000)
 
 ```
-LookBack is a cosy little journal for one small thing a day.
+LookBack is a leather-bound diary for one small thing a day.
 
-Write a few words, add a photo, or record your voice. On the very same day next year, LookBack brings it back to you as a sealed letter from your past self: open the envelope, and there's the moment you'd forgotten you saved.
+Write a few words, tuck in a photo, or record your voice. On the very same day next year, LookBack brings it back to you as a letter from your past self, so you can see how it feels now.
 
-✿ ONE SMALL THING A DAY
-No blank pages, no streak pressure. A sentence, a quote, a photo or a few seconds of your voice is plenty.
+ONE SMALL THING A DAY
+No blank pages, no streak pressure. A sentence, a quote, a photo or a few seconds of your voice is plenty. Whatever weighed on you, or made you smile, goes on today's page.
 
-💌 LETTERS FROM YOUR PAST SELF
-Every earlier year's memory arrives as an envelope with a postage stamp from that year. Several years? They stack into a deck you can swipe through.
+LETTERS FROM YOUR PAST SELF
+On the same date a year later, the page comes back as a sealed letter. Several years on the same day? They wait for you together.
 
-🎙 VOICE MEMORIES
-Record up to a minute. Your voice becomes a little polaroid with its own waveform; tap it to hear yourself from a year ago.
+WRITE BACK
+Read what you wrote a year ago, then write back to your past self. Your reply is kept in sepia ink under the original.
 
-📷 PHOTOS THAT LOOK LIKE OLD POLAROIDS
-Photos are printed as instant film with a soft vintage glow. Write on the strip, and when the words get long, turn the polaroid over: P.T.O!
+VOICE ON TAPE
+Record up to a minute. Your voice goes on a little cassette, and a leather tape recorder plays it back, reels turning, needle following your voice.
 
-📚 A DIARY FOR EVERY YEAR
-Each year stands on a little wooden bookshelf. Tap one and it flies off the shelf and opens, with every memory from that year scattered like a pile of keepsakes. Tidy them into months with one tap.
+A DIARY FOR EVERY YEAR
+Each year is its own volume on a bookshelf. Open one and every page of that year is there.
 
-🐰 A BUNNY FOR COMPANY
-A soft clay bunny cheers when you save, peeks over the page, and naps when there's nothing yet.
+MAKE IT YOURS
+Pick the colour of your paper, by day or by lamplight at night.
 
-🎨 MAKE IT YOURS
-Pick your paper (cream, peach, rose, lemon, mint, sky, lavender) in light or lamplit dark, and choose the sticker and washi tape on every memory.
+GIVE A PAGE TO SOMEONE YOU LOVE
+Add the people you trust (beside you, or by sharing your code), and give them a page: it goes straight from your phone to theirs, encrypted. Pages from your people arrive by themselves, even when LookBack is closed.
 
-💌 GIVE A PAGE TO SOMEONE YOU LOVE
-Add the people you trust (beside you, or by sharing your code), and give them a page: it flies straight from your phone to theirs, encrypted, like AirDrop. Pages from your people arrive by themselves, even when LookBack is closed.
+GENTLE REMINDERS
+A quiet note on the days when a letter from an earlier year is waiting, at the time you choose.
 
-🔔 GENTLE REMINDERS
-A quiet note on the days when a memory from an earlier year is waiting, at the time you choose.
-
-🔒 PRIVATE BY DESIGN
-Your memories stay on your phone. No ads, no tracking. If you like, back them up to a "LookBack" folder in your own Google Drive; the app can only see the files it made there. Pages you give go phone to phone and are never stored on a server.
+PRIVATE BY DESIGN
+Your diary stays on your phone. No ads, no tracking. If you like, back it up to a "LookBack" folder in your own Google Drive; the app can only see the files it made there. Pages you give go phone to phone and are never stored on a server.
 
 LookBack is made by one person, with care. Start today, and next year, today will be waiting for you.
 ```
@@ -59,12 +56,12 @@ LookBack is made by one person, with care. Start today, and next year, today wil
 ## Release notes for this version ("What's new", max 500)
 
 ```
-Hello, Play Store! ✿
-• Give a page to someone: phone to phone, encrypted, like AirDrop.
+Hello, Play Store!
+• A new look: a leather-bound diary with cream pages.
+• Voice memories play on a little tape recorder.
+• Write back to your past self when a letter comes back.
+• Give a page to someone: phone to phone, encrypted.
 • Pages from your people arrive by themselves, with an alert if LookBack is closed.
-• Voice memories that look like polaroids with a waveform.
-• Photos look like old instant film.
-• A darker bar at night, and buttons where your thumb is.
 ```
 
 ## Category and contact

@@ -1,7 +1,9 @@
 /**
- * The diary's paper: the color a person chooses (cream, peach, rose, lemon, mint, sky, lavender), by day and by
- * lamplight (night: a deep shade of the same color, not black). `dots` is the paper's own accent, `accent2` a partner
- * color. Pure module (no React Native imports).
+ * The diary's paper: the color a person chooses, by day and by lamplight. Premium means quiet: by day a pale sheet
+ * clearly in the color; by lamplight a deep jewel shade of it (as deep as the navy, never a muddy brown). The
+ * color stays on surfaces; lettering is deep ink by day and one antique gold by lamplight (navy keeps its steel blue).
+ * `dots` is the paper's own muted accent (dot grid, tape, widget glow), `accent2` a partner color.
+ * Pure module (no React Native imports).
  */
 import { mixHex, withAlpha } from './yearColors';
 
@@ -20,23 +22,38 @@ export interface Paper {
   dots: string;
   /** A partner accent that sits well next to `dots` on this paper (the bar's second tape). */
   accent2: string;
+  /** Tooling by day (rules, outlines, washes) and the deep ink titles are lettered in. */
+  giltDay: string;
+  titleDay: string;
+  /** Tooling by lamplight, and the brighter shade titles are lettered in. */
+  giltNight: string;
+  titleNight: string;
 }
 
+/** One antique gold for every paper but navy, so the diary has a single accent whatever its color. */
+const GOLD_DAY = '#9C7A3C';
+const GOLD_NIGHT = '#C3A060';
+const GOLD_TITLE_NIGHT = '#DCC28E';
+const gold = { giltDay: GOLD_DAY, giltNight: GOLD_NIGHT, titleNight: GOLD_TITLE_NIGHT };
+
 export const PAPERS: readonly Paper[] = [
-  // Day: the paper itself, a clear color you can tell apart at a glance. Night: the same paper by lamplight, deep.
-  { name: 'cream', label: 'Cream', light: '#F4E7C9', lightDeep: '#E8D6AE', dark: '#2A2317', darkDeep: '#1D180F', dots: '#B8893E', accent2: '#B5452E' },
-  { name: 'peach', label: 'Peach', light: '#F8CDB0', lightDeep: '#EDB894', dark: '#3A2018', darkDeep: '#28150F', dots: '#D0663E', accent2: '#3E6E8E' },
-  { name: 'rose', label: 'Rose', light: '#F4C3CB', lightDeep: '#E8AAB5', dark: '#371A22', darkDeep: '#251117', dots: '#C24D6A', accent2: '#3D7A62' },
-  { name: 'lemon', label: 'Lemon', light: '#F6E3A0', lightDeep: '#ECD37C', dark: '#2F2912', darkDeep: '#201C0B', dots: '#B98E1E', accent2: '#4B5FA6' },
-  { name: 'mint', label: 'Mint', light: '#C4E7D0', lightDeep: '#A9D9BA', dark: '#13291F', darkDeep: '#0C1C15', dots: '#3E8F67', accent2: '#C2553C' },
-  { name: 'sky', label: 'Sky', light: '#C0DAF2', lightDeep: '#A3C6E8', dark: '#122337', darkDeep: '#0B1726', dots: '#3D78B3', accent2: '#D0663E' },
-  { name: 'lavender', label: 'Lavender', light: '#D8CBF0', lightDeep: '#C4B2E6', dark: '#221B35', darkDeep: '#171224', dots: '#7357B5', accent2: '#C9A23A' },
+  { name: 'ivory', label: 'Ivory', light: '#F3EBDB', lightDeep: '#E6DCC6', dark: '#1F1A14', darkDeep: '#15110C', dots: '#A88B5C', accent2: '#7A2E2E', titleDay: '#2A2118', ...gold },
+  { name: 'tobacco', label: 'Tobacco', light: '#EEDDC8', lightDeep: '#E0CCB2', dark: '#26190F', darkDeep: '#1A110A', dots: '#8E6A48', accent2: '#3F5A4A', titleDay: '#3A2414', ...gold },
+  { name: 'oxblood', label: 'Oxblood', light: '#F0DCD9', lightDeep: '#E3C9C5', dark: '#2B1418', darkDeep: '#1D0D10', dots: '#8E4450', accent2: '#A8833F', titleDay: '#4A1A22', ...gold },
+  { name: 'ink', label: 'Ink', light: '#E2E5E9', lightDeep: '#D2D6DC', dark: '#16191E', darkDeep: '#0E1014', dots: '#6B717B', accent2: '#A8833F', titleDay: '#1C2026', ...gold },
+  { name: 'bottle', label: 'Bottle', light: '#DBE7DA', lightDeep: '#C9D9C7', dark: '#10241B', darkDeep: '#0A1812', dots: '#4E7A62', accent2: '#A8833F', titleDay: '#173326', ...gold },
+  // The navy by lamplight is the look everything else is measured against: it keeps its own steel-blue lettering.
+  { name: 'navy', label: 'Navy', light: '#D9E4F0', lightDeep: '#C6D5E6', dark: '#122337', darkDeep: '#0B1726', dots: '#3D78B3', accent2: '#C2804A', titleDay: '#16263D', giltDay: '#3D6E9E', giltNight: '#5A8CBE', titleNight: '#8BAED1' },
+  { name: 'plum', label: 'Plum', light: '#E5DDEE', lightDeep: '#D5CAE2', dark: '#211830', darkDeep: '#160F21', dots: '#76608F', accent2: '#A8833F', titleDay: '#2E2142', ...gold },
 ];
 
-/** Looks saved before the papers came back named a leather: each becomes the nearest paper. */
-const OLD_NAMES: Record<string, string> = { green: 'mint', oxblood: 'rose', navy: 'sky', chestnut: 'peach', black: 'cream' };
+/** Looks saved by earlier versions (the pastel papers, and before them the leathers) become the nearest paper. */
+const OLD_NAMES: Record<string, string> = {
+  cream: 'ivory', peach: 'tobacco', rose: 'oxblood', lemon: 'ivory', mint: 'bottle', sky: 'navy', lavender: 'plum',
+  green: 'bottle', chestnut: 'tobacco', black: 'ink',
+};
 
-export const DEFAULT_PAPER = 'cream';
+export const DEFAULT_PAPER = 'ivory';
 
 export interface Look {
   paper: string;
@@ -94,22 +111,26 @@ export interface NavColors {
   brassDark: string;
 }
 
-const IVORY = '#F1E8D4';
 const BAKELITE = '#2A2420';
 const ENGRAVED_DAY = '#2A2118';
 const ENGRAVED_NIGHT = '#F0E4CC';
+/** How much of the paper's deep shade the bakelite keys take at night. */
+const NIGHT_KEY_TINT = 0.75;
 const LED = '#F0A23C';
 const OAK = '#4E2F18';
 const WALNUT = '#2C1A0D';
 const BRASS = '#C9A04A';
 const BRASS_DARK = '#7E5F22';
 const BLACK = '#000000';
+/** How much brighter than the page a card (and the bar) is by day. */
+export const DAY_CARD_LIFT = 0.3;
 const WHITE = '#FFFFFF';
 
 /** The desk is the same wood on every paper; the keys take a whisper of the paper's accent. */
 export function navColors(paper: Paper, tone: PaperTone): NavColors {
   const day = tone === 'light';
-  const key = day ? mixHex(IVORY, paper.dots, 0.06) : mixHex(BAKELITE, paper.dark, 0.3);
+  // By day the keys are a brighter sheet of the chosen paper (the same as the cards), so the bar matches the page.
+  const key = day ? mixHex(paper.light, WHITE, DAY_CARD_LIFT) : mixHex(mixHex(BAKELITE, paper.dark, NIGHT_KEY_TINT), WHITE, 0.05);
   const wood = day ? OAK : WALNUT;
   return {
     strip: key,
@@ -117,7 +138,7 @@ export function navColors(paper: Paper, tone: PaperTone): NavColors {
     stitch: day ? withAlpha(BLACK, 0.12) : withAlpha(WHITE, 0.08),
     shadow: withAlpha(BLACK, day ? 0.3 : 0.6),
     ink: day ? ENGRAVED_DAY : ENGRAVED_NIGHT,
-    inkMuted: day ? mixHex(ENGRAVED_DAY, IVORY, 0.4) : mixHex(ENGRAVED_NIGHT, BAKELITE, 0.35),
+    inkMuted: day ? mixHex(ENGRAVED_DAY, key, 0.4) : mixHex(ENGRAVED_NIGHT, BAKELITE, 0.35),
     active: LED,
     tape: paper.dots,
     tape2: paper.accent2,

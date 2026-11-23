@@ -565,7 +565,7 @@ class Session {
       this.alive();
       const entry = (await entriesRepository.getAll()).find((e) => e.id === item.entryId);
       if (!entry) throw new Error('gone');
-      const { name } = await settingsRepository.getProfile();
+      const { name, portrait } = await settingsRepository.getProfile();
       const files: { kind: 'photo' | 'voice'; file: File }[] = [];
       if (entry.photoPath) files.push({ kind: 'photo', file: new File(Paths.document, entry.photoPath) });
       if (entry.voicePath) files.push({ kind: 'voice', file: new File(Paths.document, entry.voicePath) });
@@ -584,6 +584,7 @@ class Session {
         voiceMs: entry.voiceMs,
         photo: describe('photo'),
         voice: describe('voice'),
+        portrait,
       };
       channel.send(JSON.stringify(header));
       const total = (header.photo?.size ?? 0) + (header.voice?.size ?? 0);
@@ -650,11 +651,12 @@ class Session {
       const known = await sharingRepository.person(this.peer);
       const senderName = known?.name ?? h.name;
       const older = (await sharingRepository.letters()).filter((l) => l.senderId === this.peer && l.memoryDate === h.date && l.id !== this.gift);
-      await sharingRepository.keepLetter({ id: this.gift, senderId: this.peer, senderName, memoryDate: h.date, body: h.body, voiceTitle: h.voiceTitle, voiceMs: h.voiceMs, photoPath, voicePath });
+      await sharingRepository.keepLetter({ id: this.gift, senderId: this.peer, senderName, senderPortrait: h.portrait, memoryDate: h.date, body: h.body, voiceTitle: h.voiceTitle, voiceMs: h.voiceMs, photoPath, voicePath });
       // The page they gave again replaces the copy you had of that day (only after the new one is safely kept).
       for (const old of older) await sharingRepository.removeLetter(old.id).catch(() => undefined);
       // They're one of your people now, with the phone key their page was signed with.
       await sharingRepository.addPerson(this.peer, senderName, this.theirKey);
+      if (h.portrait) await sharingRepository.setPortrait(this.peer, h.portrait);
       this.channel?.send('{"t":"kept"}');
       this.finish();
       setIncoming(this.gift, { state: 'kept', progress: 1 });

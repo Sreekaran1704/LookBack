@@ -1,5 +1,5 @@
 import { router, useFocusEffect, usePathname } from 'expo-router';
-import { createContext, useCallback, useContext, useEffect, useState, type ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState, type ReactNode } from 'react';
 import { Keyboard, Pressable, StyleSheet, Text, View } from 'react-native';
 import Animated, { makeMutable, useAnimatedScrollHandler, useAnimatedStyle, useReducedMotion, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -8,7 +8,9 @@ import type { IconName } from './Buttons';
 import { pagerPosition } from './pagerPosition';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import { useReceivedLetters } from '../hooks/useSharing';
-import { useAllEntries, useToday } from '../hooks/useData';
+import { useAllEntries, useProfile, useToday } from '../hooks/useData';
+import { portraitFor } from '../lib/portrait';
+import { FilmPortrait } from './scrapbook/FilmPortrait';
 import { tapHaptic } from '../lib/haptics';
 import { PAPER_TABS_H, PaperTabs, Stitches, useBarMetrics, useBarPaper, type PaperTab } from './PaperTabs';
 import { Texture } from './scrapbook/Texture';
@@ -32,7 +34,7 @@ const NavBarContext = createContext<NavBarState>({ action: null, setAction: () =
  * The bar is for moving between the three main pages. Pages you open into (a memory, a year's diary, the
  * writing page, the first-run questions) have their own action bar instead, so the bar steps aside there.
  */
-const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/', '/letter', '/settings'];
+const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/', '/letter', '/settings', '/portrait'];
 
 export function NavBarProvider({ children }: { children: ReactNode }) {
   const [action, setAction] = useState<NavAction | null>(null);
@@ -154,8 +156,17 @@ export function NavBar() {
     if (pathname === path) return;
     router.navigate(path);
   };
+  const me = useMyPortrait();
   const items: PaperTab[] = [
-    ...PAGES.map((p, i) => ({ key: p.path, icon: p.icon as IconName, label: p.label, active: i === on, onPress: () => go(p.path), badge: p.path === '/shared' ? unread : undefined })),
+    ...PAGES.map((p, i) => ({
+      key: p.path,
+      icon: p.icon as IconName,
+      label: p.label,
+      active: i === on,
+      onPress: () => go(p.path),
+      badge: p.path === '/shared' ? unread : undefined,
+      picture: p.path === '/you' ? me : undefined,
+    })),
     ...(action ? [{ key: action.key, icon: action.icon, label: action.label, onPress: action.onPress }] : []),
   ];
 
@@ -163,6 +174,23 @@ export function NavBar() {
     <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.wrap, barStyle]}>
       <PaperTabs items={items} slide={on >= 0 ? pagerPosition : undefined} bottomInset={insets.bottom} center={<WriteButton />} centerAt={WRITE_AT} />
     </Animated.View>
+  );
+}
+
+/** How much taller than an icon your portrait is on the You place (it stands up out of the wash's top, halfway to the bar's edge; the bottom lines up). */
+const BAR_PORTRAIT_GROW = 4;
+
+/** Your portrait for the You place, drawn again only when your portrait, name or the bar's paper changes. */
+function useMyPortrait(): PaperTab['picture'] {
+  const { data: profile } = useProfile();
+  const { icon } = useBarMetrics();
+  const bar = useBarPaper();
+  const code = profile?.portrait ?? null;
+  const name = profile?.name ?? '';
+  const height = icon + BAR_PORTRAIT_GROW;
+  return useMemo(
+    () => ({ height, node: <FilmPortrait portrait={portraitFor(code, name)} size={height} hole={bar.bg} /> }),
+    [code, name, height, bar.bg],
   );
 }
 

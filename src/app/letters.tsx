@@ -108,7 +108,7 @@ export default function GiveScreen() {
               {what} go straight from your phone to theirs, encrypted. Your reply to yourself stays with you.
             </Text>
             {people.map((p) => (
-              <PersonButton key={p.id} id={p.id} name={p.name} label={`Give to ${p.name}`} disabled={busy} onPress={() => void give(p)} />
+              <PersonButton key={p.id} id={p.id} name={p.name} portrait={p.portrait} label={`Give to ${p.name}`} disabled={busy} onPress={() => void give(p)} />
             ))}
             <NearbyPeople state={nearbyState} people={newNearby} busy={busy} onRetry={retryNearby} onPick={(p) => void give(p)} actionLabel={(n) => `Give to ${n} · beside you`} compact />
           </View>

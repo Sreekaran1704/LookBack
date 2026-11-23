@@ -201,6 +201,7 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
         <Stack.Screen name="year/[year]" options={{ presentation: 'transparentModal', animation: 'fade', animationDuration: 1 }} />
         <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="settings" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
+        <Stack.Screen name="portrait" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
       </Stack>
       <NavBar />
       <GiftArrival />

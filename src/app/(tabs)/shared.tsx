@@ -87,7 +87,7 @@ function SharedScreen() {
                 letters.map((letter) => (
                   <PressableScale key={letter.id} onPress={() => router.push(`/letter/${letter.id}`)} accessibilityRole="button" accessibilityLabel={`Open the page from ${letter.senderName}`}>
                     <View style={rowStyle}>
-                      <PersonSeal id={letter.senderId} name={letter.senderName} />
+                      <PersonSeal name={letter.senderName} portrait={people.find((p) => p.id === letter.senderId)?.portrait ?? letter.senderPortrait} />
                       <View style={{ flex: 1 }}>
                         <Text numberOfLines={1} style={[typography.print, { color: colors.ink, fontWeight: letter.openedAt ? '400' : '700' }]}>
                           {letter.senderName}
@@ -112,7 +112,7 @@ function SharedScreen() {
               <Text style={[typography.heading, { color: colors.ink }]}>Your people</Text>
               {people.map((p) => (
                 <View key={p.id} style={rowStyle}>
-                  <PersonSeal id={p.id} name={p.name} />
+                  <PersonSeal name={p.name} portrait={p.portrait} />
                   <View style={{ flex: 1 }}>
                     <Text numberOfLines={1} style={[typography.print, { color: colors.ink }]}>
                       {p.name}

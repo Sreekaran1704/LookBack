@@ -1,5 +1,6 @@
 import { createChangeEmitter } from './changes';
 import { getDb } from './db';
+import { parsePortrait } from '../lib/portrait';
 import { parseLook, type Look } from '../theme/papers';
 import type { ReminderSettings, BackupInfo } from './types';
 
@@ -18,6 +19,8 @@ const NO_BACKUP: BackupInfo = { account: null, lastBackupAt: null };
 export interface Profile {
   /** What the bunny calls you ('' = not given). */
   name: string;
+  /** Your portrait's code (`lib/portrait.ts`), or null until you make one. It goes with the pages you give. */
+  portrait: string | null;
 }
 
 export interface SettingsRepository {
@@ -26,7 +29,8 @@ export interface SettingsRepository {
   getLook(): Promise<Look>;
   setLook(look: Look): Promise<void>;
   getProfile(): Promise<Profile>;
-  setProfile(profile: Profile): Promise<void>;
+  /** Changes only the fields given (setting your name keeps your portrait, and the other way round). */
+  setProfile(patch: Partial<Profile>): Promise<void>;
   /** Whether the first-run questions (name, paper, reminder, backup) have been answered. */
   getOnboarded(): Promise<boolean>;
   setOnboarded(done: boolean): Promise<void>;
@@ -91,7 +95,7 @@ function createSqliteSettingsRepository(): SettingsRepository {
     }
   }
 
-  return {
+  const repo: SettingsRepository = {
     getReminder,
     async setReminder(patch) {
       const db = await getDb();
@@ -113,13 +117,14 @@ function createSqliteSettingsRepository(): SettingsRepository {
     async getProfile() {
       try {
         const value = JSON.parse((await read(KEY_PROFILE)) ?? '{}') as Partial<Profile>;
-        return { name: typeof value.name === 'string' ? value.name : '' };
+        return { name: typeof value.name === 'string' ? value.name : '', portrait: parsePortrait(value.portrait) ? (value.portrait as string) : null };
       } catch {
-        return { name: '' };
+        return { name: '', portrait: null };
       }
     },
-    async setProfile(profile) {
-      await write(KEY_PROFILE, JSON.stringify(profile));
+    async setProfile(patch) {
+      const current = await repo.getProfile();
+      await write(KEY_PROFILE, JSON.stringify({ ...current, ...patch }));
     },
     async getOnboarded() {
       return (await read(KEY_ONBOARDED)) === '1';
@@ -143,6 +148,7 @@ function createSqliteSettingsRepository(): SettingsRepository {
     },
     subscribe: changes.subscribe,
   };
+  return repo;
 }
 
 export const settingsRepository: SettingsRepository = createSqliteSettingsRepository();

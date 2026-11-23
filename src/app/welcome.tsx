@@ -9,16 +9,21 @@ import { PillButton } from '../components/Buttons';
 import { ActionBar, type BarAction } from '../components/Screen';
 import { SlideSwitch } from '../components/Hardware';
 import { PaperPicker } from '../components/Pickers';
+import { PortraitChoices } from '../components/PortraitChoices';
 import { Buddy } from '../components/scrapbook/Buddy';
+import { FilmPortrait } from '../components/scrapbook/FilmPortrait';
 import { PaperBackground } from '../components/scrapbook/PaperBackground';
 import { accountRepository, backupRepository, DEFAULT_REMINDER, settingsRepository, type BackupStatus } from '../data';
 import { useProfile, useReminderSettings, useToday } from '../hooks/useData';
 import { parseLocalDate } from '../lib/dates';
+import { encodePortrait, portraitFor, randomPortrait, type Portrait } from '../lib/portrait';
 import { successHaptic } from '../lib/haptics';
 import { requestPermission } from '../notifications/scheduler';
 import { useLook, useTheme, type PaperTone } from '../theme';
 
-const STEPS = ['hello', 'name', 'paper', 'reminder', 'backup', 'done'] as const;
+const STEPS = ['hello', 'name', 'portrait', 'paper', 'reminder', 'backup', 'done'] as const;
+/** How tall your portrait is on the first run's portrait step. */
+const PORTRAIT_H = 170;
 
 const TONES = [
   { value: 'light', label: 'Day', icon: 'sunny-outline' },
@@ -51,8 +56,13 @@ export default function WelcomeScreen() {
     if (profile.name) setName(profile.name);
   }
 
+  // Your portrait while you make it; until the first change, the saved one (or the one your name would give you).
+  const [portraitEdits, setPortrait] = useState<Portrait | null>(null);
+  const portrait = portraitEdits ?? portraitFor(profile?.portrait, name.trim());
+
   const next = () => {
     if (current === 'name') settingsRepository.setProfile({ name: name.trim() }).catch(() => undefined);
+    if (current === 'portrait') settingsRepository.setProfile({ portrait: encodePortrait(portrait) }).catch(() => undefined);
     setStep((s) => Math.min(s + 1, STEPS.length - 1));
   };
   const back = () => (step === 0 ? router.back() : setStep((s) => s - 1));
@@ -69,11 +79,14 @@ export default function WelcomeScreen() {
       ? { key: 'begin', icon: 'arrow-forward', label: 'Begin', primary: colors.gilt, onPress: next }
       : current === 'name'
         ? { key: 'name', icon: 'arrow-forward', label: who ? `${who}'s diary` : 'Skip', primary: who ? colors.gilt : undefined, onPress: next }
-        : current === 'paper'
-          ? { key: 'paper', icon: 'arrow-forward', label: 'This one', primary: colors.gilt, onPress: next }
-          : null;
+        : current === 'portrait'
+          ? { key: 'portrait', icon: 'arrow-forward', label: 'This is me', primary: colors.gilt, onPress: next }
+          : current === 'paper'
+            ? { key: 'paper', icon: 'arrow-forward', label: 'This one', primary: colors.gilt, onPress: next }
+            : null;
   const barActions: BarAction[] = [
     ...(step > 0 && current !== 'done' ? [{ key: 'back', icon: 'chevron-back' as const, label: 'Back', onPress: back }] : []),
+    ...(current === 'portrait' ? [{ key: 'surprise', icon: 'shuffle' as const, label: 'Surprise', accessibilityLabel: 'Surprise me: a whole new portrait', onPress: () => setPortrait(randomPortrait()) }] : []),
     ...(onward ? [onward] : []),
   ];
   const entering = stepIn(reduceMotion);
@@ -96,9 +109,11 @@ export default function WelcomeScreen() {
 
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, padding: spacing.gutter, paddingBottom: insets.bottom + spacing.xl }}>
           <Animated.View key={current} entering={entering} exiting={exiting} style={{ flex: 1, gap: spacing.xl }}>
-            <View style={{ alignItems: 'center' }}>
-              <Buddy size={current === 'hello' || current === 'done' ? sizes.buddy * 1.4 : sizes.buddy * 0.8} bump={step} />
-            </View>
+            {current === 'portrait' ? null : (
+              <View style={{ alignItems: 'center' }}>
+                <Buddy size={current === 'hello' || current === 'done' ? sizes.buddy * 1.4 : sizes.buddy * 0.8} bump={step} />
+              </View>
+            )}
 
             {current === 'hello' ? (
               <Page
@@ -124,6 +139,15 @@ export default function WelcomeScreen() {
                     accessibilityLabel="Your name"
                   />
                 </View>
+              </Page>
+            ) : null}
+
+            {current === 'portrait' ? (
+              <Page title="And what do you look like?" body="Make a little portrait of yourself. It goes with the pages you give, so your people know they're from you. Change it any time on You.">
+                <View style={{ alignItems: 'center' }}>
+                  <FilmPortrait portrait={portrait} size={PORTRAIT_H} hole={colors.desk} />
+                </View>
+                <PortraitChoices value={portrait} onChange={setPortrait} />
               </Page>
             ) : null}
 
