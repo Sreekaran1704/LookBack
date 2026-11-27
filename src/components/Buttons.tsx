@@ -77,7 +77,7 @@ export function PillButton({ label, icon, tone = 'paper', large = false, onPress
       <Stitches />
       {wash ? <WashIn color={wash} /> : null}
       {icon ? <Ionicons name={icon} size={large ? sizes.icon - 2 : sizes.iconSmall + 1} color={ink} /> : null}
-      <Text numberOfLines={1} style={[typography.small, { color: ink, fontSize: large ? 16 : 15, lineHeight: large ? 20 : 19, fontWeight: '700', flexShrink: 0, paddingRight: 0 }]}>
+      <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[typography.small, { color: ink, fontSize: large ? 16 : 15, lineHeight: large ? 20 : 19, fontWeight: '700', flexShrink: 1, paddingRight: 0 }]}>
         {label}
       </Text>
     </>

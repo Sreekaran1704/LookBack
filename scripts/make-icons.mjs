@@ -8,9 +8,10 @@
  * Re-run after changing the buddy's look or the brand colors, then rebuild the app.
  */
 import { createRequire } from 'node:module';
-import { readFileSync, writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { CASSETTE_STYLES, iconNameFor } from '../src/theme/cassettes.ts';
 
 const require = createRequire(import.meta.url);
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -1095,22 +1096,13 @@ function oldCassetteIcon(canvas, s, state) {
   }
 }
 
-/** The icon's backdrop: black, with a warm amber glow from the top left, like a desk lamp on the cassette. */
-function woodBg(canvas, s) {
-  canvas.clear(color('#000000'));
-  const glow = paint();
-  glow.setShader(CK.Shader.MakeRadialGradient([s * 0.3, s * 0.2], s * 1.1, [color('#E2B000'), color('#000000'), color('#000000')], [0, 0.45, 1], CK.TileMode.Clamp));
-  canvas.drawRect(CK.XYWHRect(0, 0, s, s), glow);
-  canvas.drawRect(CK.XYWHRect(0, 0, s, s), paint({ hex: '#000000', alpha: 0.12 }));
-}
-
 /**
  * The cassette exactly as the app shows it (src/components/scrapbook/Cassette.tsx, in its 100 × 63 units): black shell,
  * cream label with the "A" box and "LookBack" handwritten, red stripe, the smoked window onto the brown tape packs and
  * white hubs, the printed band ("LOOKBACK" · "C·365"), the trapezoid with its holes and the screws. Drawn `w` wide at
  * (x, y), tilted a little and casting a shadow, on a transparent sheet.
  */
-function appCassette(canvas, x, y, w, { shadow = true, tilt = -4 } = {}) {
+function appCassette(canvas, x, y, w, { shadow = true, tilt = -4, bandText = true } = {}) {
   const u = w / 100;
   const R = (l, t, ww, hh) => CK.XYWHRect(x + l * u, y + t * u, ww * u, hh * u);
   const RR = (l, t, ww, hh, r) => CK.RRectXY(R(l, t, ww, hh), r * u, r * u);
@@ -1166,8 +1158,8 @@ function appCassette(canvas, x, y, w, { shadow = true, tilt = -4 } = {}) {
   // The band.
   canvas.drawRRect(RR(6, 44, 88, 7, 0.8), paint({ hex: '#E9DFC4' }));
   canvas.drawRect(R(46, 44, 12, 7), paint({ hex: '#C8372B', alpha: 0.85 }));
-  canvas.drawText('LOOKBACK', x + 8 * u, y + 49.2 * u, paint({ hex: '#2A2118' }), new CK.Font(cormorant, 4.2 * u));
-  canvas.drawText('C·365', x + 82 * u, y + 49.2 * u, paint({ hex: '#2A2118' }), new CK.Font(cormorant, 4.2 * u));
+  if (bandText) canvas.drawText('LOOKBACK', x + 8 * u, y + 49.2 * u, paint({ hex: '#2A2118' }), new CK.Font(cormorant, 4.2 * u));
+  if (bandText) canvas.drawText('C·365', x + 82 * u, y + 49.2 * u, paint({ hex: '#2A2118' }), new CK.Font(cormorant, 4.2 * u));
   // The trapezoid at the foot, with its holes.
   canvas.drawPath(svg(`M ${x + 20 * u} ${y + 63 * u} L ${x + 22 * u} ${y + 54 * u} L ${x + 78 * u} ${y + 54 * u} L ${x + 80 * u} ${y + 63 * u} Z`), paint({ hex: '#141416' }));
   canvas.drawPath(svg(`M ${x + 20 * u} ${y + 63 * u} L ${x + 22 * u} ${y + 54 * u} L ${x + 78 * u} ${y + 54 * u} L ${x + 80 * u} ${y + 63 * u}`), paint({ hex: '#3A3A3D', stroke: 0.4 * u }));
@@ -1185,60 +1177,352 @@ function appCassette(canvas, x, y, w, { shadow = true, tilt = -4 } = {}) {
   canvas.restore();
 }
 
-/** Where the cassette sits in an icon square `s` across: 84% wide, centred. */
-const CASS = (s) => ({ x: s * 0.08, y: (s - s * 0.84 * 0.63) / 2, w: s * 0.84 });
+/** The visible box: the whole square for the full icon, the middle two-thirds for an Android adaptive layer. */
+const FULL_BOX = (s) => [0, 0, s];
+const ADAPTIVE_BOX = (s) => [s / 6, s / 6, (s * 2) / 3];
+
+/** A gradient paint: `stops` are [hex, alpha, position]. */
+function grad(kind, a, b, stops) {
+  const p = paint();
+  const colors = stops.map(([h, al]) => color(h, al));
+  const pos = stops.map((st) => st[2]);
+  p.setShader(kind === 'lin' ? CK.Shader.MakeLinearGradient(a, b, colors, pos, CK.TileMode.Clamp) : CK.Shader.MakeRadialGradient(a, b, colors, pos, CK.TileMode.Clamp));
+  return p;
+}
+const textWidth = (f, str) => f.getGlyphWidths(f.getGlyphIDs(str)).reduce((x, y) => x + y, 0);
+/** Is this colour light (so things on it want dark ink)? */
+const isLight = (hex) => {
+  const n = parseInt(hex.slice(1), 16);
+  return ((n >> 16) & 255) * 0.3 + ((n >> 8) & 255) * 0.59 + (n & 255) * 0.11 > 150;
+};
+
+/** The icon's backdrop in the style's colour, lit from the top left, with a faint dot grid. */
+function iconBg(canvas, s, style = CASSETTE_STYLES[0]) {
+  const bg = style.iconBackground;
+  const light = isLight(bg);
+  canvas.drawRect(CK.XYWHRect(0, 0, s, s), paint({ hex: bg }));
+  canvas.drawRect(CK.XYWHRect(0, 0, s, s), grad('rad', [s * 0.4, s * 0.3], s * 0.95, [['#FFFFFF', light ? 0.35 : 0.1, 0], ['#FFFFFF', 0, 0.6], ['#000000', light ? 0.12 : 0.35, 1]]));
+  const step = s / 32;
+  for (let gx = step / 2; gx < s; gx += step) for (let gy = step / 2; gy < s; gy += step) canvas.drawCircle(gx, gy, s / 512, paint({ hex: light ? '#000000' : '#FFFFFF', alpha: 0.05 }));
+}
+
+/** The paper sticker or label's handwriting: the "A" box, the ruled line, "LookBack" in pen, small print. */
+function labelWriting(c, X, Y, u, style, { top, small }) {
+  c.drawRect(CK.LTRBRect(X(10), Y(top + 2.2), X(15.5), Y(top + 7.7)), paint({ hex: style.side }));
+  const fA = new CK.Font(cormorant, 6.2 * u);
+  c.drawText('A', X(12.75) - textWidth(fA, 'A') / 2, Y(top + 6.9), paint({ hex: isLight(style.side) ? '#1A1A1A' : style.label }), fA);
+  c.drawLine(X(18), Y(top + 9.2), X(84), Y(top + 9.2), paint({ hex: isLight(style.label) ? '#8C7A5C' : '#6A6A6A', alpha: 0.7, stroke: 0.25 * u }));
+  c.drawText('LookBack', X(19.5), Y(top + 8.4), paint({ hex: style.ink }), new CK.Font(caveat, 9.8 * u));
+  c.drawText(small, X(80.5), Y(top + 3.4), paint({ hex: style.ink, alpha: 0.6 }), new CK.Font(cormorant, small.length > 4 ? 2.4 * u : 4.4 * u));
+}
+
+/** Silver Phillips screws in the corners and the centre. */
+function screws(c, X, Y, u, ring) {
+  [[4, 4], [96, 4], [4, 59], [96, 59], [50, 49.3]].forEach(([sx, sy]) => {
+    const cx = X(sx);
+    const cy = Y(sy);
+    const r = 1.55 * u;
+    if (ring) c.drawCircle(cx, cy, r * 1.6, paint({ hex: '#FFFFFF', alpha: 0.18, stroke: 0.25 * u }));
+    c.drawCircle(cx, cy + 0.2 * u, r, paint({ alpha: 0.5, blur: 0.3 * u }));
+    c.drawCircle(cx, cy, r, grad('rad', [cx - r * 0.4, cy - r * 0.4], r * 1.6, [['#F6F6F6', 1, 0], ['#A6A6A6', 1, 0.55], ['#555555', 1, 1]]));
+    c.drawLine(cx - r * 0.6, cy, cx + r * 0.6, cy, paint({ hex: '#2A2A2A', stroke: 0.28 * u }));
+    c.drawLine(cx, cy - r * 0.6, cx, cy + r * 0.6, paint({ hex: '#2A2A2A', stroke: 0.28 * u }));
+  });
+}
+
+/** White take-up hubs: six teeth round the spindle hole. */
+function hubsAt(c, X, Y, u, hubs, hubY, ring) {
+  hubs.forEach((hx) => {
+    const cx = X(hx);
+    const cy = Y(hubY);
+    if (ring) {
+      c.drawCircle(cx, cy, 8.4 * u, paint({ hex: '#FFFFFF', alpha: 0.1 }));
+      c.drawCircle(cx, cy, 8.4 * u, paint({ hex: '#FFFFFF', alpha: 0.35, stroke: 0.3 * u }));
+    }
+    c.drawCircle(cx, cy + 0.4 * u, 6.3 * u, paint({ alpha: 0.45, blur: 0.5 * u }));
+    c.drawCircle(cx, cy, 6.3 * u, grad('rad', [cx - 2 * u, cy - 2 * u], 9 * u, [['#FFFFFF', 1, 0], ['#EDEDEA', 1, 0.5], ['#BEBDB7', 1, 1]]));
+    c.drawCircle(cx, cy, 6.3 * u, paint({ hex: '#8C8B86', stroke: 0.25 * u }));
+    c.drawCircle(cx, cy, 3.5 * u, paint({ hex: '#141414' }));
+    for (let i = 0; i < 6; i++) {
+      c.save();
+      c.rotate(i * 60, cx, cy);
+      c.drawRect(CK.XYWHRect(cx - 0.55 * u, cy - 3.6 * u, 1.1 * u, 1.45 * u), paint({ hex: '#E8E7E2' }));
+      c.restore();
+    }
+  });
+}
+
+/** Tape packs wound in fine rings, with light catching the edge. */
+function packsAt(c, X, Y, u, packs, hubY, tape, rnd) {
+  packs.forEach(([hx, r]) => {
+    const cx = X(hx);
+    const cy = Y(hubY);
+    c.drawCircle(cx, cy, r * u, grad('rad', [cx, cy], r * u, [[mixHex(tape, '#FFFFFF', 0.12), 1, 0.3], [tape, 1, 0.75], [mixHex(tape, '#000000', 0.5), 1, 1]]));
+    for (let rr = 8.5; rr < r; rr += 0.55) c.drawCircle(cx, cy, rr * u, paint({ hex: rnd() < 0.5 ? '#000000' : '#8A7A6A', alpha: 0.16, stroke: 0.1 * u }));
+    const arc = svg(`M ${cx - r * 0.75 * u} ${cy - r * 0.45 * u} Q ${cx - r * 0.2 * u} ${cy - r * 1.02 * u} ${cx + r * 0.55 * u} ${cy - r * 0.7 * u}`);
+    c.drawPath(arc, paint({ hex: '#FFFFFF', alpha: 0.2, stroke: 1.1 * u, blur: 0.5 * u }));
+  });
+}
+function mixHex(a, b, t) {
+  const pa = parseInt(a.slice(1), 16);
+  const pb = parseInt(b.slice(1), 16);
+  const ch = (sh) => Math.round(((pa >> sh) & 255) * (1 - t) + ((pb >> sh) & 255) * t);
+  return '#' + [16, 8, 0].map((sh) => ch(sh).toString(16).padStart(2, '0')).join('');
+}
 
 /**
- * The icon: the app's cassette under a warm lamp glow on black, breaking as days go unwritten (see src/lib/appIcon.ts): a
- * hairline crack while today waits; cracks radiating from an impact after a missed day; shattered after four days.
- * With `wood: false` only the cassette is drawn (the Android adaptive foreground, over the glow background layer).
+ * A see-through cassette (clear, or tinted), front-on, `w` px wide at (x, y), in millimetres of a real one (100 × 63),
+ * after the clear Maxell / Sony HF / JVC shells: glossy tape packs, white toothed hubs in clear rings, a paper sticker
+ * written on in pen, print straight on the plastic with a "C 90" box, corner rollers, a metal pressure-pad shield,
+ * screws, under frosted plastic that is clearer over the window and bright along its edges.
  */
-function cassetteIcon(canvas, s, state, { wood = true } = {}) {
-  const rnd = seeded(state === 'gone' ? 77 : state === 'missed' ? 31 : 13);
-  const { x, y, w } = CASS(s);
+function seeThroughCassette(c, x, y, w, style, { shadow = true } = {}) {
   const u = w / 100;
-  const lw = s / 340;
-  if (wood) woodBg(canvas, s);
-  // The shell's outline (tilted like the cassette), so cracks stay on the plastic.
-  const shellClip = () => {
-    canvas.rotate(-4, x + 50 * u, y + 31.5 * u);
-    canvas.clipRRect(CK.RRectXY(CK.XYWHRect(x, y, w, 63 * u), 3 * u, 3 * u), CK.ClipOp.Intersect, true);
-    canvas.rotate(4, x + 50 * u, y + 31.5 * u);
-  };
-  if (state !== 'gone') appCassette(canvas, x, y, w);
+  const X = (v) => x + v * u;
+  const Y = (v) => y + v * u;
+  const R = (l, t, r, b) => CK.LTRBRect(X(l), Y(t), X(r), Y(b));
+  const RR = (l, t, r, b, rd) => CK.RRectXY(R(l, t, r, b), rd * u, rd * u);
+  const rnd = seeded(7);
+  const shell = RR(0, 0, 100, 63, 3.5);
+  const hubY = 31;
+  const hubs = [29, 71];
+
+  if (shadow) c.drawRRect(RR(0.6, 2.2, 100.6, 65.5, 3.5), paint({ alpha: 0.7, blur: 3 * u }));
+
+  c.save();
+  c.clipRRect(shell, CK.ClipOp.Intersect, true);
+  c.drawRRect(shell, grad('lin', [X(0), Y(0)], [X(100), Y(63)], [[style.shell[0], 1, 0], [style.shell[1], 1, 0.6], [style.shell[2], 1, 1]]));
+  packsAt(c, X, Y, u, [[hubs[0], 19.5], [hubs[1], 11]], hubY, style.tape, rnd);
+  const tape = svg(`M ${X(hubs[0] - 15)} ${Y(hubY + 12.5)} L ${X(9)} ${Y(56)} Q ${X(10)} ${Y(59)} ${X(13)} ${Y(59)} L ${X(87)} ${Y(59)} Q ${X(90)} ${Y(59)} ${X(91)} ${Y(56)} L ${X(hubs[1] + 9.5)} ${Y(hubY + 6)}`);
+  c.drawPath(tape, paint({ hex: '#1A120C', stroke: 0.9 * u }));
+  hubsAt(c, X, Y, u, hubs, hubY, true);
+  [[10.5, 56], [89.5, 56]].forEach(([rx, ry]) => {
+    const cx = X(rx);
+    const cy = Y(ry);
+    c.drawCircle(cx, cy, 2.5 * u, grad('rad', [cx - 0.7 * u, cy - 0.7 * u], 3 * u, [[mixHex(style.accent, '#FFFFFF', 0.35), 1, 0], [style.accent, 1, 0.6], [mixHex(style.accent, '#000000', 0.35), 1, 1]]));
+    c.drawCircle(cx, cy, 0.8 * u, paint({ hex: isLight(style.accent) ? '#555555' : '#F2F2F2' }));
+  });
+  c.drawRect(R(43, 53.5, 57, 57.6), grad('lin', [X(43), Y(53.5)], [X(57), Y(57.6)], [['#E9E9EA', 1, 0], ['#9C9DA0', 1, 0.5], ['#D8D8DA', 1, 1]]));
+  c.drawRect(R(43, 53.5, 57, 57.6), paint({ hex: '#5E5F62', stroke: 0.2 * u }));
+  c.drawRect(R(47.5, 57.6, 52.5, 58.8), paint({ hex: '#CFC6B0' }));
+  c.restore();
+
+  c.save();
+  c.clipRRect(shell, CK.ClipOp.Intersect, true);
+  const win = RR(23, 23.5, 77, 39, 2);
+  c.save();
+  c.clipRRect(win, CK.ClipOp.Difference, true);
+  c.drawRect(R(0, 0, 100, 63), grad('lin', [X(0), Y(0)], [X(0), Y(63)], [['#FFFFFF', 0.14, 0], ['#FFFFFF', 0.07, 0.5], ['#FFFFFF', 0.1, 1]]));
+  c.restore();
+  c.drawRect(R(0, 0, 100, 63), paint({ hex: '#FFFFFF', alpha: 0.04 }));
+  const mould = (a) => paint({ hex: '#FFFFFF', alpha: a, stroke: 0.3 * u });
+  c.drawRRect(win, mould(0.45));
+  c.drawRRect(RR(22.3, 22.8, 77.7, 39.7, 2.4), paint({ alpha: 0.25, stroke: 0.3 * u }));
+  c.drawLine(X(3), Y(16.8), X(97), Y(16.8), mould(0.25));
+  c.drawLine(X(3), Y(47.8), X(97), Y(47.8), mould(0.2));
+  c.drawPath(svg(`M ${X(16)} ${Y(63)} L ${X(20)} ${Y(50.5)} L ${X(80)} ${Y(50.5)} L ${X(84)} ${Y(63)}`), mould(0.4));
+  [27, 73].forEach((hx) => c.drawRRect(RR(hx - 1.7, 58.6, hx + 1.7, 61.8, 0.5), paint({ alpha: 0.55 })));
+  [37.5, 62.5].forEach((hx) => {
+    c.drawCircle(X(hx), Y(60.2), 1.6 * u, paint({ alpha: 0.55 }));
+    c.drawCircle(X(hx), Y(60.2), 1.6 * u, mould(0.35));
+  });
+  for (let i = 0; i < 30; i++) {
+    const sx = X(rnd() * 100);
+    const sy = Y(rnd() * 63);
+    const len = (1 + rnd() * 5) * u;
+    c.drawLine(sx, sy, sx + len, sy + len * 0.1, paint({ hex: '#FFFFFF', alpha: 0.05, stroke: 0.15 * u }));
+  }
+  c.drawRect(R(0, 0, 100, 63), grad('lin', [X(0), Y(0)], [X(70), Y(63)], [['#FFFFFF', 0, 0.18], ['#FFFFFF', 0.16, 0.32], ['#FFFFFF', 0, 0.46], ['#FFFFFF', 0.06, 0.7], ['#FFFFFF', 0, 0.8]]));
+  c.restore();
+  const edge = grad('lin', [X(0), Y(0)], [X(100), Y(63)], [[style.edge, 0.9, 0], [style.edge, 0.3, 0.5], [style.edge, 0.6, 1]]);
+  edge.setStyle(CK.PaintStyle.Stroke);
+  edge.setStrokeWidth(0.7 * u);
+  c.drawRRect(shell, edge);
+  c.drawRRect(RR(1.5, 1.5, 98.5, 61.5, 2.4), paint({ hex: '#FFFFFF', alpha: 0.18, stroke: 0.3 * u }));
+
+  // The paper sticker, written on in pen.
+  c.drawRRect(RR(7.5, 4.3, 92.5, 15.8, 0.6), paint({ alpha: 0.4, blur: 0.4 * u }));
+  c.drawRRect(RR(7.5, 4, 92.5, 15.5, 0.6), grad('lin', [X(7.5), Y(4)], [X(92.5), Y(15.5)], [[style.label, 1, 0], [mixHex(style.label, '#C8BCA0', 0.25), 1, 1]]));
+  labelWriting(c, X, Y, u, style, { top: 4, small: 'NR  ON  OFF' });
+  // Print on the plastic: the name spaced out, the "C 90" box.
+  const fName = new CK.Font(cormorant, 4.2 * u);
+  fName.setEmbolden(true);
+  c.drawText('L O O K B A C K', X(10), Y(46), paint({ hex: '#F2F2F2', alpha: 0.9 }), fName);
+  const boxInk = isLight(style.accent) ? style.side : style.accent;
+  c.drawRect(R(72, 41.8, 80, 46.8), paint({ hex: '#FFFFFF', alpha: 0.9 }));
+  c.drawRect(R(80, 41.8, 90, 46.8), paint({ hex: boxInk }));
+  const f90 = new CK.Font(cormorant, 4.4 * u);
+  f90.setEmbolden(true);
+  c.drawText('C', X(76) - textWidth(f90, 'C') / 2, Y(45.9), paint({ hex: '#111111' }), f90);
+  c.drawText('90', X(85) - textWidth(f90, '90') / 2, Y(45.9), paint({ hex: '#FFFFFF' }), f90);
+  screws(c, X, Y, u, true);
+}
+
+/**
+ * A solid-shell cassette (retro, black, ivory, metal), front-on, `w` px wide at (x, y), in a real one's millimetres: the
+ * moulded shell with its rim and scuffs, a paper label with the "A" box, "LookBack" in pen and printed stripes, the
+ * stadium window round the two hubs (42 apart) onto the tape packs, the foot with its guide holes, five screws.
+ */
+function solidCassette(c, x, y, w, style, { shadow = true } = {}) {
+  const u = w / 100;
+  const X = (v) => x + v * u;
+  const Y = (v) => y + v * u;
+  const R = (l, t, r, b) => CK.LTRBRect(X(l), Y(t), X(r), Y(b));
+  const RR = (l, t, r, b, rd) => CK.RRectXY(R(l, t, r, b), rd * u, rd * u);
+  const rnd = seeded(21);
+  const lightShell = isLight(style.shell[1]);
+  const metal = style.id === 'metal';
+
+  if (shadow) {
+    c.drawRRect(RR(0.5, 2.5, 100.5, 66, 4), paint({ hex: '#000000', alpha: 0.45, blur: 3.5 * u }));
+    c.drawRRect(RR(0, 1, 100, 64, 4), paint({ hex: '#000000', alpha: 0.35, blur: 0.8 * u }));
+  }
+  const shell = RR(0, 0, 100, 63, 4);
+  c.drawRRect(shell, grad('lin', [0, Y(0)], [0, Y(63)], [[style.shell[0], 1, 0], [style.shell[1], 1, 0.45], [style.shell[2], 1, 1]]));
+  c.save();
+  c.clipRRect(shell, CK.ClipOp.Intersect, true);
+  if (metal) {
+    // Brushed: fine horizontal streaks.
+    for (let i = 0; i < 260; i++) {
+      const sy = Y(rnd() * 63);
+      c.drawLine(X(rnd() * 30), sy, X(40 + rnd() * 60), sy, paint({ hex: rnd() < 0.5 ? '#FFFFFF' : '#5A5D62', alpha: 0.12, stroke: 0.12 * u }));
+    }
+  } else {
+    for (let i = 0; i < 14; i++) {
+      const sx = X(rnd() * 100);
+      const sy = Y(rnd() * 63);
+      const len = (2 + rnd() * 8) * u;
+      const a = (rnd() - 0.5) * 0.8;
+      c.drawLine(sx, sy, sx + Math.cos(a) * len, sy + Math.sin(a) * len, paint({ hex: lightShell ? '#8A7A5A' : '#FFFFFF', alpha: 0.06, stroke: 0.18 * u }));
+    }
+  }
+  c.restore();
+  c.drawRRect(RR(1.6, 1.6, 98.4, 61.4, 2.8), paint({ hex: '#000000', alpha: lightShell ? 0.15 : 0.35, stroke: 0.5 * u }));
+  c.drawRRect(RR(2, 2, 98, 61, 2.6), paint({ hex: '#FFFFFF', alpha: lightShell ? 0.5 : 0.07, stroke: 0.35 * u }));
+  c.drawRRect(RR(0.3, 0.3, 99.7, 62.7, 3.8), paint({ hex: style.edge, alpha: 0.8, stroke: 0.5 * u }));
+
+  // Label: paper (or black foil on metal), the writing strip on top, stripes behind the window.
+  const label = RR(7, 4.5, 93, 46, 1.6);
+  c.drawRRect(label, paint({ hex: '#000000', alpha: 0.35, blur: 0.5 * u }));
+  c.save();
+  c.clipRRect(label, CK.ClipOp.Intersect, true);
+  c.drawRect(R(7, 4.5, 93, 46), grad('lin', [X(7), Y(4.5)], [X(93), Y(46)], [[mixHex(style.label, '#FFFFFF', 0.12), 1, 0], [style.label, 1, 0.6], [mixHex(style.label, '#6A5030', 0.12), 1, 1]]));
+  if (style.stripes.length > 1) {
+    const h = 18.8 / style.stripes.length;
+    style.stripes.forEach((hex, i) => c.drawRect(R(7, 21.5 + i * h, 93, 21.5 + (i + 1) * h), paint({ hex })));
+  } else if (style.stripes.length === 1) {
+    c.drawRect(R(7, 18.4, 93, 20.4), paint({ hex: style.stripes[0] }));
+    c.drawRect(R(7, 41.5, 93, 42.6), paint({ hex: style.stripes[0], alpha: 0.8 }));
+  }
+  if (!metal) for (let i = 0; i < 900; i++) c.drawCircle(X(7 + rnd() * 86), Y(4.5 + rnd() * 41.5), (0.08 + rnd() * 0.18) * u, paint({ hex: rnd() < 0.5 ? '#FFFFFF' : '#5A3A1A', alpha: 0.1 }));
+  labelWriting(c, X, Y, u, style, { top: 5.3, small: 'C90' });
+  c.restore();
+
+  // Window: a stadium round the two hubs, smoky clear plastic onto the tape.
+  const hubY = 31.5;
+  const hubs = [29, 71];
+  const win = RR(19.5, 23.5, 80.5, 39.5, 8);
+  c.drawRRect(win, paint({ hex: '#000000', alpha: 0.5, blur: 0.6 * u }));
+  c.save();
+  c.clipRRect(win, CK.ClipOp.Intersect, true);
+  c.drawRRect(win, paint({ hex: style.window }));
+  packsAt(c, X, Y, u, [[hubs[0], 17], [hubs[1], 9.5]], hubY, style.tape, rnd);
+  hubsAt(c, X, Y, u, hubs, hubY, false);
+  const glass = grad('lin', [X(19.5), Y(23.5)], [X(60), Y(39.5)], [['#FFFFFF', 0.16, 0], ['#000000', 0.16, 1]]);
+  c.drawRRect(win, glass);
+  c.restore();
+  c.drawRRect(win, paint({ hex: '#0E0B09', stroke: 0.6 * u }));
+
+  // Foot: the raised trapezoid with its guide holes and pressure-pad opening.
+  const foot = svg(`M ${X(17)} ${Y(63)} L ${X(20.5)} ${Y(51)} L ${X(79.5)} ${Y(51)} L ${X(83)} ${Y(63)} Z`);
+  c.drawPath(foot, grad('lin', [0, Y(51)], [0, Y(63)], [[mixHex(style.foot, '#FFFFFF', 0.08), 1, 0], [style.foot, 1, 1]]));
+  c.drawLine(X(20.5), Y(51), X(79.5), Y(51), paint({ hex: '#FFFFFF', alpha: lightShell ? 0.5 : 0.12, stroke: 0.4 * u }));
+  const hole = paint({ hex: '#070605' });
+  [26.5, 73.5].forEach((hx) => c.drawRRect(RR(hx - 1.6, 55.5, hx + 1.6, 58.7, 0.5), hole));
+  [38, 62].forEach((hx) => c.drawCircle(X(hx), Y(57.1), 1.7 * u, hole));
+  c.drawRRect(RR(46, 56, 54, 59.5, 0.4), hole);
+  screws(c, X, Y, u, false);
+}
+
+/** Any style's cassette. */
+function styledCassette(c, x, y, w, style, opts) {
+  if (style.clear) seeThroughCassette(c, x, y, w, style, opts);
+  else solidCassette(c, x, y, w, style, opts);
+}
+
+/** Where the cassette sits in a visible box: front-on, 82% of it wide, centred (inside a circle mask). */
+const CASS_IN = ([bx, by, bw]) => {
+  const w = bw * 0.82;
+  return { x: bx + (bw - w) / 2, y: by + (bw - w * 0.63) / 2, w };
+};
+
+/** The whole cassette as an image on a transparent sheet (for breaking it into pieces). */
+function cassetteImage(s, x, y, w, style) {
+  const surf = CK.MakeSurface(s, s);
+  styledCassette(surf.getCanvas(), x, y, w, style, { shadow: false });
+  surf.flush();
+  const img = surf.makeImageSnapshot();
+  surf.delete();
+  return img;
+}
+
+/** Draws `img` clipped to `poly` (px points), moved by (dx, dy) and turned `deg` about (px, py), with a soft shadow. */
+function piece(canvas, img, poly, { dx = 0, dy = 0, deg = 0, px = 0, py = 0, shadow = 0 } = {}) {
+  const clip = svg('M ' + poly.map(([a, b]) => `${a.toFixed(1)} ${b.toFixed(1)}`).join(' L ') + ' Z');
+  canvas.save();
+  canvas.translate(dx, dy);
+  canvas.rotate(deg, px, py);
+  if (shadow) {
+    canvas.save();
+    canvas.translate(0, shadow * 0.6);
+    canvas.drawPath(clip, paint({ alpha: 0.55, blur: shadow }));
+    canvas.restore();
+  }
+  canvas.clipPath(clip, CK.ClipOp.Intersect, true);
+  canvas.drawImage(img, 0, 0, paint());
+  canvas.restore();
+  return clip;
+}
+
+/**
+ * Clear styrene breaks like glass: a hairline crack with a glint while today waits; a spider web of cracks round an
+ * impact after a missed day; shattered into shards, a few gone, after four days.
+ */
+function breakGlass(canvas, s, state, { x, y, w, u, lw, style, rnd, shellClip }) {
   if (state === 'waiting') {
     canvas.save();
     shellClip();
-    plasticCrack(canvas, jag([x + w * 0.98, y + 2 * u], [x + w * 0.74, y + 26 * u], 9, s * 0.01, rnd), lw);
+    const pts = jag([x + w * 0.985, y + 20 * u], [x + w * 0.8, y + 40 * u], 9, w * 0.012, rnd);
+    plasticCrack(canvas, pts, lw);
+    const [gx, gy] = pts[4];
+    canvas.drawCircle(gx, gy, lw * 3, paint({ hex: '#FFFFFF', alpha: 0.7, blur: lw * 2 }));
     canvas.restore();
   }
   if (state === 'missed') {
     canvas.save();
     shellClip();
-    const P = [x + 60 * u, y + 34 * u];
-    for (let i = 0; i < 9; i++) {
-      const a = (i / 9) * Math.PI * 2 + rnd() * 0.5;
+    const P = [x + 60 * u, y + 36 * u];
+    for (let i = 0; i < 11; i++) {
+      const a = (i / 11) * Math.PI * 2 + rnd() * 0.4;
       const len = w * (0.25 + rnd() * 0.4);
-      plasticCrack(canvas, jag(P, [P[0] + Math.cos(a) * len, P[1] + Math.sin(a) * len], 10, s * 0.012, rnd), lw);
+      plasticCrack(canvas, jag(P, [P[0] + Math.cos(a) * len, P[1] + Math.sin(a) * len], 10, w * 0.01, rnd), lw);
     }
-    const ring = Array.from({ length: 11 }, (_, i) => {
-      const a = (i / 10) * Math.PI * 2;
-      const r = w * (0.06 + rnd() * 0.025);
-      return [P[0] + Math.cos(a) * r, P[1] + Math.sin(a) * r];
-    });
-    plasticCrack(canvas, ring, lw);
-    const c = w * 0.03;
+    for (const k of [0.05, 0.11, 0.19]) {
+      const ring = Array.from({ length: 12 }, (_, i) => {
+        const a = (i / 11) * Math.PI * 2;
+        const r = w * (k + rnd() * 0.02);
+        return [P[0] + Math.cos(a) * r, P[1] + Math.sin(a) * r];
+      });
+      plasticCrack(canvas, ring, lw * 0.8);
+    }
+    const c = w * 0.025;
     const chip = svg(`M ${P[0] - c} ${P[1] - c * 0.7} L ${P[0] + c * 0.7} ${P[1] - c * 1.1} L ${P[0] + c * 1.1} ${P[1] + c * 0.5} L ${P[0] - c * 0.2} ${P[1] + c} Z`);
     canvas.drawPath(chip, paint({ hex: '#050506' }));
-    canvas.drawPath(chip, paint({ hex: '#D8D8DE', alpha: 0.6, stroke: lw * 0.6 }));
+    canvas.drawPath(chip, paint({ hex: '#FFFFFF', alpha: 0.7, stroke: lw * 0.6 }));
     canvas.restore();
   }
   if (state === 'gone') {
-    // Shattered: shards cut by rays and rings round an impact, each knocked out of place, a few gone (the table shows).
-    const surf = CK.MakeSurface(s, s);
-    appCassette(surf.getCanvas(), x, y, w, { shadow: false });
-    surf.flush();
-    const img = surf.makeImageSnapshot();
+    const img = cassetteImage(s, x, y, w, style);
     const P = [x + 55 * u, y + 32 * u];
     const rays = 9;
     const angles = Array.from({ length: rays }, (_, i) => (i / rays) * Math.PI * 2 + (rnd() - 0.5) * 0.4).sort((a, b) => a - b);
@@ -1257,60 +1541,251 @@ function cassetteIcon(canvas, s, state, { wood = true } = {}) {
           : [[P[0] + Math.cos(a0) * r0, P[1] + Math.sin(a0) * r0], [P[0] + Math.cos(a0) * r1, P[1] + Math.sin(a0) * r1], [P[0] + Math.cos(a1) * r1, P[1] + Math.sin(a1) * r1], [P[0] + Math.cos(a1) * r0, P[1] + Math.sin(a1) * r0]];
         n++;
         if (missing.has(n)) continue;
-        const clip = svg('M ' + pts.map(([px, py]) => `${px} ${py}`).join(' L ') + ' Z');
         const mid = (a0 + a1) / 2;
-        const push = s * (0.01 + r * 0.014 + rnd() * 0.01);
+        const push = w * (0.012 + r * 0.016 + rnd() * 0.012);
+        const clip = piece(canvas, img, pts, { dx: Math.cos(mid) * push, dy: Math.sin(mid) * push, deg: (rnd() - 0.5) * 6, px: P[0], py: P[1] });
+        // Glass edges catch the light.
         canvas.save();
         canvas.translate(Math.cos(mid) * push, Math.sin(mid) * push);
-        canvas.rotate((rnd() - 0.5) * 6, P[0], P[1]);
-        canvas.clipPath(clip, CK.ClipOp.Intersect, true);
-        // Each shard casts its own little shadow on the table.
-        canvas.drawImage(img, 0, 0, paint());
-        canvas.restore();
-        canvas.save();
-        canvas.translate(Math.cos(mid) * push, Math.sin(mid) * push);
-        canvas.rotate(-4, x + 50 * u, y + 31.5 * u);
-        canvas.clipRRect(CK.RRectXY(CK.XYWHRect(x, y, w, 63 * u), 3 * u, 3 * u), CK.ClipOp.Intersect, true);
-        canvas.rotate(4, x + 50 * u, y + 31.5 * u);
-        canvas.drawPath(clip, paint({ hex: '#CFCFD6', alpha: 0.4, stroke: lw * 0.8 }));
+        shellClip();
+        canvas.drawPath(clip, paint({ hex: '#FFFFFF', alpha: 0.55, stroke: lw * 0.9 }));
         canvas.restore();
       }
     }
-    surf.delete();
+  }
+}
+
+/** Stress-whitening: the milky crazing moulded plastic gets where it bends, along a line of points. */
+function stressWhite(canvas, pts, lw, rnd) {
+  for (let i = 1; i < pts.length; i++) {
+    const [ax, ay] = pts[i - 1];
+    const [bx, by] = pts[i];
+    const nx = -(by - ay);
+    const ny = bx - ax;
+    const len = Math.hypot(nx, ny) || 1;
+    for (let k = 0; k < 5; k++) {
+      const t = rnd();
+      const cx = ax + (bx - ax) * t;
+      const cy = ay + (by - ay) * t;
+      const h = lw * (2 + rnd() * 4);
+      canvas.drawLine(cx - (nx / len) * h, cy - (ny / len) * h, cx + (nx / len) * h, cy + (ny / len) * h, paint({ hex: '#FFFFFF', alpha: 0.35, stroke: lw * 0.5 }));
+    }
+  }
+  canvas.drawPath(pathOf(pts), paint({ hex: '#FFFFFF', alpha: 0.25, stroke: lw * 4, blur: lw * 2 }));
+}
+
+/**
+ * Moulded plastic: stress-whitened where it has been bent while today waits; a corner snapped off with the tape
+ * slipping out of the foot after a missed day; split clean in two, the halves pulled apart on a stretch of tape, after
+ * four days.
+ */
+function breakPlastic(canvas, s, state, { x, y, w, u, lw, style, rnd, shellClip }) {
+  const X = (v) => x + v * u;
+  const Y = (v) => y + v * u;
+  if (state === 'waiting') {
+    canvas.save();
+    shellClip();
+    const pts = bezier([X(100), Y(10)], [X(93), Y(16)], [X(90), Y(24)], [X(86), Y(34)], 8);
+    stressWhite(canvas, pts, lw, rnd);
+    crack(canvas, jag([X(100), Y(12)], [X(94), Y(19)], 4, u * 0.6, rnd), u);
+    canvas.restore();
+  }
+  if (state === 'missed') {
+    const img = cassetteImage(s, x, y, w, style);
+    // The corner that snapped: a jagged line from the bottom edge up to the right edge.
+    const edge = jag([X(72), Y(63)], [X(100), Y(38)], 8, u * 1.6, rnd);
+    const body = [[X(0), Y(0)], [X(100), Y(0)], ...[...edge].reverse(), [X(0), Y(63)]];
+    const corner = [...edge, [X(100), Y(63)]];
+    canvas.drawRRect(CK.RRectXY(CK.XYWHRect(X(0.6), Y(2.2), w, 63 * u), 3.5 * u, 3.5 * u), paint({ alpha: 0.5, blur: 3 * u }));
+    piece(canvas, img, body);
+    // The snapped piece, fallen a little away and turned.
+    piece(canvas, img, corner, { dx: 6 * u, dy: 6 * u, deg: 14, px: X(88), py: Y(52), shadow: 1.5 * u });
+    // White stress along both broken edges, and a crack running on into the body.
+    stressWhite(canvas, edge, lw, rnd);
+    canvas.save();
+    canvas.translate(6 * u, 6 * u);
+    canvas.rotate(14, X(88), Y(52));
+    stressWhite(canvas, edge, lw, rnd);
+    canvas.restore();
+    crack(canvas, jag(edge[3], [X(58), Y(30)], 7, u * 0.8, rnd), u);
+  }
+  if (state === 'gone') {
+    const img = cassetteImage(s, x, y, w, style);
+    // Split down the middle along a jagged line.
+    const split = jag([X(54), Y(-1)], [X(47), Y(64)], 10, u * 2.2, rnd);
+    const left = [[X(-1), Y(-1)], ...split, [X(-1), Y(64)]];
+    const right = [...split, [X(101), Y(64)], [X(101), Y(-1)]];
+    const L = { dx: -8 * u, dy: 4 * u, deg: -9, px: X(25), py: Y(32), shadow: 2.5 * u };
+    const R = { dx: 9 * u, dy: -3 * u, deg: 11, px: X(75), py: Y(32), shadow: 2.5 * u };
+    piece(canvas, img, left, L);
+    piece(canvas, img, right, R);
+    for (const [poly, t] of [[split, L], [split, R]]) {
+      canvas.save();
+      canvas.translate(t.dx, t.dy);
+      canvas.rotate(t.deg, t.px, t.py);
+      stressWhite(canvas, poly, lw, rnd);
+      canvas.restore();
+    }
+  }
+}
+
+/** A dent in metal: a shaded hollow, dark on the side away from the light, a bright crescent on the near side. */
+function dent(canvas, cx, cy, r, sq = 0.7) {
+  canvas.save();
+  canvas.scale(1, sq);
+  const y = cy / sq;
+  canvas.drawCircle(cx, y, r, grad('rad', [cx + r * 0.35, y + r * 0.35], r * 1.2, [['#000000', 0.45, 0], ['#000000', 0.15, 0.6], ['#000000', 0, 1]]));
+  canvas.drawCircle(cx, y, r, grad('rad', [cx - r * 0.45, y - r * 0.45], r * 0.9, [['#FFFFFF', 0.55, 0], ['#FFFFFF', 0, 1]]));
+  canvas.drawCircle(cx, y, r, paint({ hex: '#000000', alpha: 0.18, stroke: r * 0.06, blur: r * 0.05 }));
+  canvas.restore();
+}
+/** Scratches in brushed metal: bright gouges with a dark side. */
+function scratches(canvas, x0, y0, n, len, u, rnd) {
+  for (let i = 0; i < n; i++) {
+    const sx = x0 + (rnd() - 0.5) * len;
+    const sy = y0 + (rnd() - 0.5) * len * 0.5;
+    const a = -0.5 + (rnd() - 0.5) * 0.4;
+    const l = len * (0.3 + rnd() * 0.7);
+    const ex = sx + Math.cos(a) * l;
+    const ey = sy + Math.sin(a) * l;
+    canvas.drawLine(sx, sy + 0.15 * u, ex, ey + 0.15 * u, paint({ hex: '#000000', alpha: 0.45, stroke: 0.22 * u }));
+    canvas.drawLine(sx, sy, ex, ey, paint({ hex: '#FFFFFF', alpha: 0.85, stroke: 0.18 * u }));
+  }
+}
+/** A metal corner bent over: the folded flap, darker underside showing. */
+function bentCorner(canvas, X, Y, u, size, rnd) {
+  const a = [X(100 - size), Y(0)];
+  const b = [X(100), Y(size)];
+  // The folded flap lies over the shell.
+  const flap = svg(`M ${a[0]} ${a[1]} L ${b[0]} ${b[1]} L ${X(100 - size * 0.95)} ${Y(size * 0.95)} Z`);
+  canvas.drawPath(flap, paint({ alpha: 0.4, blur: u }));
+  canvas.drawPath(flap, grad('lin', a, b, [['#6E7176', 1, 0], ['#C9CCD0', 1, 0.5], ['#5A5D62', 1, 1]]));
+  canvas.drawPath(svg(`M ${a[0]} ${a[1]} L ${b[0]} ${b[1]}`), paint({ hex: '#FFFFFF', alpha: 0.8, stroke: 0.35 * u }));
+  void rnd;
+}
+
+/**
+ * Metal: scratched while today waits; dented with a corner bent over after a missed day; crushed (dents, crumple ridges,
+ * a corner torn and folded) after four days.
+ */
+function breakMetal(canvas, s, state, { x, y, w, u, style, rnd, shellClip }) {
+  const X = (v) => x + v * u;
+  const Y = (v) => y + v * u;
+  if (state === 'waiting') {
+    canvas.save();
+    shellClip();
+    scratches(canvas, X(84), Y(52), 5, 18 * u, u, rnd);
+    canvas.restore();
+  }
+  if (state === 'missed') {
+    // The shell without the corner that folded over, then the dent, scratches and the folded flap.
+    const img = cassetteImage(s, x, y, w, style);
+    canvas.drawRRect(CK.RRectXY(CK.XYWHRect(x + 0.6 * u, y + 2.2 * u, w, 63 * u), 3.5 * u, 3.5 * u), paint({ alpha: 0.5, blur: 3 * u }));
+    piece(canvas, img, [[X(0), Y(0)], [X(86), Y(0)], [X(100), Y(14)], [X(100), Y(63)], [X(0), Y(63)]]);
+    canvas.save();
+    shellClip();
+    dent(canvas, X(64), Y(50), 9 * u);
+    scratches(canvas, X(66), Y(50), 6, 20 * u, u, rnd);
+    canvas.restore();
+    bentCorner(canvas, X, Y, u, 14, rnd);
+  }
+  if (state === 'gone') {
+    const img = cassetteImage(s, x, y, w, style);
+    // Crushed: the shell squeezed and bent a little out of true.
+    canvas.save();
+    canvas.rotate(-5, X(50), Y(32));
+    canvas.translate(0, 2 * u);
+    canvas.scale(1, 0.94);
+    piece(canvas, img, [[X(0), Y(0)], [X(86), Y(0)], [X(100), Y(14)], [X(100), Y(63)], [X(0), Y(63)]], { shadow: 2.5 * u });
+    canvas.save();
+    shellClip();
+    dent(canvas, X(30), Y(18), 11 * u, 0.8);
+    dent(canvas, X(70), Y(46), 13 * u, 0.6);
+    dent(canvas, X(48), Y(56), 7 * u, 0.7);
+    // Crumple ridges across the face.
+    for (const row of [[8, 36, 92, 30], [4, 50, 70, 60], [30, 10, 60, 42]]) {
+      const pts = jag([X(row[0]), Y(row[1])], [X(row[2]), Y(row[3])], 7, u * 2, rnd);
+      canvas.drawPath(pathOf(pts), paint({ hex: '#000000', alpha: 0.35, stroke: 0.9 * u, blur: 0.4 * u }));
+      canvas.save();
+      canvas.translate(-0.5 * u, -0.5 * u);
+      canvas.drawPath(pathOf(pts), paint({ hex: '#FFFFFF', alpha: 0.6, stroke: 0.4 * u }));
+      canvas.restore();
+    }
+    scratches(canvas, X(40), Y(30), 9, 30 * u, u, rnd);
+    canvas.restore();
+    bentCorner(canvas, X, Y, u, 14, rnd);
+    canvas.restore();
   }
 }
 
 /**
- * The app icon is a close-up of a real cassette filling the square, and it breaks as days go unwritten, so it is
- * noticed: a hairline crack while today waits; cracks radiating from an impact after a missed day; shattered after
- * four days (see src/lib/appIcon.ts). Each state is an icon set: a full iOS icon and an Android adaptive foreground.
+ * The icon: the chosen cassette on its backdrop, breaking as days go unwritten (see src/lib/appIcon.ts) the way its
+ * material breaks (src/theme/cassettes.ts): glass, plastic or metal.
+ * `bg: false` draws the cassette alone (the Android adaptive foreground, over the backdrop layer).
  */
-const ICON_STATES = [
-  { file: 'icon', state: 'default' },
-  { file: 'icon-waiting', state: 'waiting' },
-  { file: 'icon-missed', state: 'missed' },
-  { file: 'icon-gone', state: 'gone' },
-];
-let iconBytes;
-for (const { file, state } of ICON_STATES) {
-  const bytes = render(S, (c) => cassetteIcon(c, S, state), `${file}.png`);
-  if (file === 'icon') iconBytes = bytes;
-  // Adaptive: the whole face, shrunk a little so the window and label sit inside the safe zone.
-  render(
-    S,
-    (c) => {
-      c.save();
-      c.translate(S * 0.17, S * 0.17);
-      c.scale(0.66, 0.66);
-      cassetteIcon(c, S, state, { wood: false });
-      c.restore();
-    },
-    file === 'icon' ? 'android-icon-foreground.png' : `android-${file}-foreground.png`,
-  );
+function cassetteIcon(canvas, s, state, { box = FULL_BOX(s), bg = true, style = CASSETTE_STYLES[0] } = {}) {
+  const rnd = seeded(state === 'gone' ? 77 : state === 'missed' ? 31 : 13);
+  const { x, y, w } = CASS_IN(box);
+  const u = w / 100;
+  const lw = w / 280;
+  if (bg) iconBg(canvas, s, style);
+  const shellClip = () => canvas.clipRRect(CK.RRectXY(CK.XYWHRect(x, y, w, 63 * u), 3.5 * u, 3.5 * u), CK.ClipOp.Intersect, true);
+  const whole = state === 'default' || state === 'waiting' || (state === 'missed' && style.material === 'glass');
+  if (whole) styledCassette(canvas, x, y, w, style);
+  if (state === 'default') return;
+  const ctx = { x, y, w, u, lw, style, rnd, shellClip };
+  if (style.material === 'glass') breakGlass(canvas, s, state, ctx);
+  else if (style.material === 'plastic') breakPlastic(canvas, s, state, ctx);
+  else breakMetal(canvas, s, state, ctx);
 }
-// Android adaptive icon background layer: black with the lamp's amber glow.
-render(S, (c) => woodBg(c, S), 'android-icon-background.png');
-render(S, (c) => cassette(c, S * 0.2, (S - S * 0.6 * 0.63) / 2, (S * 0.6) / 100, { mono: true }), 'android-icon-monochrome.png');
+
+/**
+ * The app icon is the cassette the person picked (src/theme/cassettes.ts), and it breaks as days go unwritten, so it is
+ * noticed (src/lib/appIcon.ts). Every style × state is an icon set (a full iOS icon and an Android adaptive foreground,
+ * the cassette alone inside the safe zone so circle and squircle masks never cut it). The clear one, whole, is the
+ * main icon; the rest are the alternate icons in app.json, named by iconNameFor() and kept in assets/icons/.
+ */
+const ICON_STATES = ['Default', 'Waiting', 'Missed', 'Gone'];
+mkdirSync(path.join(root, 'assets', 'icons'), { recursive: true });
+let iconBytes;
+for (const style of CASSETTE_STYLES) {
+  for (const state of ICON_STATES) {
+    const name = iconNameFor(style.id, state);
+    const st = state.toLowerCase();
+    const full = name ? `icons/${name}.png` : 'icon.png';
+    const fg = name ? `icons/${name}-foreground.png` : 'android-icon-foreground.png';
+    const bytes = render(S, (c) => cassetteIcon(c, S, st, { style }), full);
+    if (!name) iconBytes = bytes;
+    render(S, (c) => cassetteIcon(c, S, st, { box: ADAPTIVE_BOX(S), bg: false, style }), fg);
+  }
+}
+// Android adaptive icon background layer (the main icon's).
+render(S, (c) => iconBg(c, S), 'android-icon-background.png');
+// Themed icon: one-colour silhouette of the cassette (shell with the window, hubs, sticker line and foot holes cut out).
+render(
+  S,
+  (c) => {
+    const { x, y, w } = CASS_IN(ADAPTIVE_BOX(S));
+    const u = w / 100;
+    const RR = (l, t, r, b, rd) => CK.RRectXY(CK.LTRBRect(x + l * u, y + t * u, x + r * u, y + b * u), rd * u, rd * u);
+    const ink = paint({ hex: '#FFFFFF' });
+    const cut = paint();
+    cut.setBlendMode(CK.BlendMode.Clear);
+    c.drawRRect(RR(0, 0, 100, 63, 3.5), ink);
+    c.drawRRect(RR(7.5, 4, 92.5, 15.5, 0.8), cut);
+    c.drawRRect(RR(10, 6.2, 15.5, 11.7, 0.3), ink);
+    c.drawRRect(RR(23, 23.5, 77, 39, 2), cut);
+    [29, 71].forEach((hx) => {
+      c.drawCircle(x + hx * u, y + 31 * u, 6.3 * u, ink);
+      c.drawCircle(x + hx * u, y + 31 * u, 3.5 * u, cut);
+    });
+    c.drawPath(svg(`M ${x + 16 * u} ${y + 63 * u} L ${x + 20 * u} ${y + 50.5 * u} L ${x + 80 * u} ${y + 50.5 * u} L ${x + 84 * u} ${y + 63 * u} Z`), cut);
+    c.drawPath(svg(`M ${x + 17.5 * u} ${y + 63 * u} L ${x + 21 * u} ${y + 52 * u} L ${x + 79 * u} ${y + 52 * u} L ${x + 82.5 * u} ${y + 63 * u} Z`), ink);
+    [27, 73].forEach((hx) => c.drawRRect(RR(hx - 1.7, 57.5, hx + 1.7, 60.7, 0.5), cut));
+    [37.5, 62.5].forEach((hx) => c.drawCircle(x + hx * u, y + 59.1 * u, 1.6 * u, cut));
+  },
+  'android-icon-monochrome.png',
+);
 
 /** The app icon (the intact cassette) as a rounded tile at (x, y), `size` across, on a transparent sheet. */
 function cassetteTile(c, x, y, size, state = 'default') {
@@ -1373,7 +1848,7 @@ render(
     glow.setShader(CK.Shader.MakeRadialGradient([320, 200], 330, [color('#B8893E', 0.55), color('#B8893E', 0.12), color('#B8893E', 0)], [0, 0.55, 1], CK.TileMode.Clamp));
     c.drawRect(CK.XYWHRect(0, 0, 640, 480), glow);
     c.restore();
-    appCassette(c, 60, 34, 520, { tilt: 0 });
+    styledCassette(c, 70, 40, 500, CASSETTE_STYLES[0]);
     const print = (size) => new CK.Font(fell, size);
     c.drawRRect(CK.RRectXY(CK.XYWHRect(40, 404, 210, 46), 23, 23), paint({ hex: '#B8893E', stroke: 2 }));
     c.drawCircle(66, 427, 7, paint({ hex: '#C8372B' }));
@@ -1381,6 +1856,30 @@ render(
     c.drawText('LookBack', 470, 436, paint({ hex: '#EDE3CC', alpha: 0.6 }), print(26));
   },
   'widget-preview.png',
+  480,
+);
+
+// The "From your person" widget's preview (src/widget/PersonWidget.tsx): blush paper, a wax seal, a note in pen.
+render(
+  640,
+  (c) => {
+    const card = CK.RRectXY(CK.XYWHRect(8, 8, 624, 464), 44, 44);
+    c.drawRRect(card, paint({ hex: '#F8E9E4' }));
+    const heart = (x, y, k, a) => c.drawPath(svg(`M ${x + 10 * k} ${y + 17 * k} C ${x + 4 * k} ${y + 12.5 * k} ${x + k} ${y + 9.5 * k} ${x + k} ${y + 6 * k} C ${x + k} ${y + 3 * k} ${x + 3.5 * k} ${y + k} ${x + 6 * k} ${y + k} C ${x + 7.8 * k} ${y + k} ${x + 9.2 * k} ${y + 2 * k} ${x + 10 * k} ${y + 3.6 * k} C ${x + 10.8 * k} ${y + 2 * k} ${x + 12.2 * k} ${y + k} ${x + 14 * k} ${y + k} C ${x + 16.5 * k} ${y + k} ${x + 19 * k} ${y + 3 * k} ${x + 19 * k} ${y + 6 * k} C ${x + 19 * k} ${y + 9.5 * k} ${x + 16 * k} ${y + 12.5 * k} ${x + 10 * k} ${y + 17 * k} Z`), paint({ hex: '#B7707B', alpha: a }));
+    heart(540, 30, 2.6, 0.35);
+    heart(580, 100, 1.6, 0.25);
+    heart(510, 120, 1.2, 0.2);
+    c.drawCircle(78, 78, 34, radial(70, 68, 40, ['#E0565E', '#A8222E', '#6E1018'], [0, 0.6, 1]));
+    heart(58, 60, 2, 0.8);
+    c.drawText('from Priya', 128, 92, paint({ hex: '#9E3B4A' }), new CK.Font(caveat, 46));
+    c.drawText('a new page for you · 2h ago', 130, 124, paint({ hex: '#B7707B' }), new CK.Font(fell, 22));
+    c.drawRRect(CK.RRectXY(CK.XYWHRect(40, 156, 560, 290), 14, 14), paint({ hex: '#FFFBF5' }));
+    c.drawRRect(CK.RRectXY(CK.XYWHRect(40, 156, 560, 290), 14, 14), paint({ hex: '#EED4CC', stroke: 2 }));
+    const pen = paint({ hex: '#3A2A55' });
+    const hand = new CK.Font(caveat, 40);
+    ['the chai place by the station', 'closed today. we have to find', 'a new one when you are back ♡'].forEach((line, i) => c.drawText(line, 66, 222 + i * 62, pen, hand));
+  },
+  'widget-person-preview.png',
   480,
 );
 

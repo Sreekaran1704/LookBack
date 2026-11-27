@@ -1,6 +1,7 @@
 import * as Crypto from 'expo-crypto';
 import * as SecureStore from 'expo-secure-store';
 import { fromBase64Url, publicKeyOf, signHandshake, toBase64Url, type Handshake } from '../../lib/identity';
+import { openEnvelope, sealPage, type SealedHead } from '../../lib/mailbox';
 
 /**
  * This phone's own key (see lib/identity.ts). The secret half never leaves the phone's secure storage (Android
@@ -28,4 +29,16 @@ export async function myPublicKey(): Promise<string> {
 /** Signs one side of a page's connection. */
 export async function signMine(h: Handshake): Promise<string> {
   return signHandshake((await load()).secret, h);
+}
+
+/** Seals a page for someone's phone (their phone key), signed with this phone's key (see lib/mailbox.ts). */
+export async function sealForThem(o: { gift: string; from: string; to: string; recipientKey: string; page: Uint8Array }): Promise<Uint8Array> {
+  const { secret } = await load();
+  return sealPage({ ...o, senderSecret: secret, random: (n) => Crypto.getRandomBytes(n) });
+}
+
+/** Opens an envelope sealed for this phone, if it was signed by `senderKey`. Null if it can't be. */
+export async function openForMe(o: { head: SealedHead; sealed: Uint8Array; me: string; senderKey: string }): Promise<Uint8Array | null> {
+  const { secret } = await load();
+  return openEnvelope({ ...o, recipientSecret: secret });
 }

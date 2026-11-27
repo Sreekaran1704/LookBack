@@ -53,7 +53,14 @@ November 22, 2026.
 - A note's sender is real, but the name in it is whatever they typed; someone you already have shows under the name
   you saved. Nothing arrives unless you accept it.
 - Deleting your account (You → Delete sharing account) makes a new account id next time you connect.
-- Phones on different mobile networks may not reach each other directly; that needs a TURN relay, not set up yet.
+- Phones on different mobile networks may not reach each other directly. Then the page goes through the **sealed
+  mailbox** (`202611260001_mailbox.sql`, applied November 26, 2026; Security Advisor: 0 errors, its only new warning is the usual
+  "signed-in users can execute SECURITY DEFINER" for `mailbox_can_leave`, like every RPC here): a private `mailbox` bucket (50 MB per envelope) where the giver leaves the page
+  sealed for the receiver's phone key at `<receiver>/<giver>/<gift>.lbm`. Policies: only you as the giver can leave one
+  (the path's giver must be your id), at most 60 of yours waiting per person, only the receiver (or the giver, to take
+  it back) can see or delete it. The server holds only sealed bytes; the receiver deletes it once kept. `send_note`
+  also allows a `mail` note ("there's an envelope for you"). Free on the existing project; no Cloudflare needed
+  (`functions/turn` is optional and unused without its secrets).
 
 ## Checks
 

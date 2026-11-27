@@ -17,7 +17,7 @@ import { useTheme } from '../../theme';
 
 const uriOf = (path: string | null) => (path ? new File(Paths.document, path).uri : null);
 
-/** A page someone gave you, read from this phone (it came straight from theirs; it was never online). */
+/** A page someone gave you, read from this phone (it came from theirs directly, or sealed through the mailbox). */
 export default function LetterScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const { colors, typography, spacing } = useTheme();

@@ -1,72 +1,73 @@
 import { memo, useEffect } from 'react';
 import { Text, View } from 'react-native';
 import Animated, { cancelAnimation, Easing, useAnimatedStyle, useReducedMotion, useSharedValue, withRepeat, withTiming } from 'react-native-reanimated';
-import { useTheme } from '../../theme';
+import { useTheme, type CassetteStyle } from '../../theme';
 
 interface Props {
   width: number;
-  /** A black shell with a paper label (TDK-style), or a clear see-through shell showing the tape inside. */
-  shell?: 'black' | 'clear';
   /** Written on the label in the person's hand. */
   title: string;
-  /** Under the window, like a length printed on the band ("0:42"). */
+  /** Printed small on the label, like a tape's length ("0:42"). */
   detail?: string;
   /** How much tape has wound onto the right reel (0–1). */
   played?: number;
   /** The reels turn. */
   spinning?: boolean;
+  /** Draw this style instead of the one the person picked (the style picker's previews). */
+  style?: CassetteStyle;
 }
 
 /** A compact cassette is 100 × 63 (its real proportions); everything below is in those units. */
 const RATIO = 0.63;
-const SHELL_BLACK = '#1C1C1E';
-const SHELL_BLACK_EDGE = '#3A3A3D';
-const SHELL_CLEAR = 'rgba(215, 218, 224, 0.42)';
-const SHELL_CLEAR_EDGE = 'rgba(255, 255, 255, 0.55)';
-const LABEL = '#F4F1EA';
-const BAND = '#E9DFC4';
-const BAND_STRIPE = '#C8372B';
-const TAPE = '#4A2E1F';
-const TAPE_EDGE = '#2E1C12';
 const HUB = '#F2F2F0';
-const HUB_TOOTH = '#BDBDBB';
-const LEADER = '#D9372B';
+const HUB_EDGE = '#9C968A';
+const HUB_HOLE = '#141414';
 const SCREW = '#8C8C90';
-const INK = '#23304A';
+const STICKER_SHADE = 'rgba(0,0,0,0.18)';
 const SPIN_MS = 1700;
-/** The black shell's window (in the 100 × 63 units). */
-const WIN_L = 14;
-const WIN_R = 86;
-const WIN_T = 21.5;
-const WIN_B = 41;
-const WINDOW = '#2A211C';
-const WINDOW_EDGE = '#55555A';
+/** The hubs: 42 apart, as on a real cassette. */
+const HUB_X = [29, 71];
+const HUB_Y = 31.5;
+const HUB_R = 6.3;
+const PACK_MIN = 9;
+const PACK_MAX = 17;
 
-/** A white take-up hub with six teeth round a dark centre, turning with the tape. */
-function Hub({ left, top, r, u, clear = false, spinStyle }: { left: number; top: number; r: number; u: number; clear?: boolean; spinStyle: object }) {
+/** A white take-up hub: six teeth round the spindle hole, turning with the tape. */
+function Hub({ cx, cy, u, spinStyle }: { cx: number; cy: number; u: number; spinStyle: object }) {
+  const r = HUB_R * u;
   return (
-    <Animated.View style={[{ position: 'absolute', left, top, width: r * 2, height: r * 2, borderRadius: r, backgroundColor: HUB, alignItems: 'center', justifyContent: 'center', boxShadow: `inset 0px 0px 0px ${0.6 * u}px ${HUB_TOOTH}` }, spinStyle]}>
-      <View style={{ width: r * 0.95, height: r * 0.95, borderRadius: r, backgroundColor: clear ? '#3A3A3A' : '#1A1A1A' }} />
-      {[0, 60, 120].map((a) => (
-        <View key={a} style={{ position: 'absolute', width: 1.3 * u, height: r * 1.3, backgroundColor: HUB, transform: [{ rotate: `${a}deg` }] }} />
+    <Animated.View style={[{ position: 'absolute', left: cx - r, top: cy - r, width: r * 2, height: r * 2, borderRadius: r, backgroundColor: HUB, alignItems: 'center', justifyContent: 'center', borderWidth: Math.max(0.5, 0.25 * u), borderColor: HUB_EDGE, backgroundImage: `radial-gradient(circle at 35% 35%, #FFFFFF 0%, ${HUB} 50%, #C9C5BA 100%)` }, spinStyle]}>
+      <View style={{ width: 7 * u, height: 7 * u, borderRadius: 4 * u, backgroundColor: HUB_HOLE }} />
+      {[0, 60, 120, 180, 240, 300].map((a) => (
+        <View key={a} style={{ position: 'absolute', width: 1.1 * u, height: 7.2 * u, transform: [{ rotate: `${a}deg` }] }}>
+          <View style={{ width: 1.1 * u, height: 1.5 * u, backgroundColor: HUB }} />
+        </View>
       ))}
     </Animated.View>
   );
 }
 
+/** A tape pack: wound tape in fine rings round a hub. */
+function Pack({ cx, cy, r, u, tape }: { cx: number; cy: number; r: number; u: number; tape: string }) {
+  return (
+    <View style={{ position: 'absolute', left: cx - r * u, top: cy - r * u, width: r * 2 * u, height: r * 2 * u, borderRadius: r * u, backgroundColor: tape, borderWidth: Math.max(0.5, 0.3 * u), borderColor: 'rgba(0,0,0,0.45)', backgroundImage: 'radial-gradient(circle at 40% 35%, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.04) 55%, rgba(0,0,0,0.35) 100%)' }} />
+  );
+}
+
 /**
- * A realistic 90s compact cassette, drawn from plain views (so it scales and can sit inside a texture): the shell with
- * its corner screws, a paper label with an "A" box and the title in handwriting, the window with two hubs and the
- * brown tape wound on them (moving from left to right as it plays), the printed band, and the trapezoid at the foot
- * with its holes. `clear` is the see-through shell: the tape packs and a red leader show through.
+ * A realistic compact cassette in the style the person picked (src/theme/cassettes.ts, the same one as the app icon),
+ * drawn from plain views so it scales and can sit inside a texture. Solid shells: moulded plastic with a paper label
+ * (the "A" box, the title in pen, printed stripes) and a stadium window round the two hubs onto the tape. Clear shells:
+ * the tape packs, hubs and corner rollers seen through the plastic, under a paper sticker. Tape moves from the left pack
+ * to the right one as it plays; the hubs turn while `spinning`.
  */
-export const Cassette = memo(function Cassette({ width, shell = 'black', title, detail, played = 0.15, spinning = false }: Props) {
+export const Cassette = memo(function Cassette({ width, title, detail, played = 0.15, spinning = false, style }: Props) {
   const theme = useTheme();
   const { typography } = theme;
+  const look = style ?? theme.cassette;
   const reduceMotion = useReducedMotion();
   const u = width / 100;
   const h = width * RATIO;
-  const clear = shell === 'clear';
   const spin = useSharedValue(0);
 
   useEffect(() => {
@@ -78,96 +79,87 @@ export const Cassette = memo(function Cassette({ width, shell = 'black', title, 
   }, [spinning, reduceMotion, spin]);
   const spinStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${-spin.get()}deg` }] }));
 
-  const hubR = 7.5 * u;
-  const hubY = 31 * u;
-  const hubs = [29 * u, 71 * u];
-  const packMin = 9 * u;
-  const packMax = 17 * u;
-  const packs = [packMin + (packMax - packMin) * (1 - played), packMin + (packMax - packMin) * played];
+  const packs = [PACK_MIN + (PACK_MAX - PACK_MIN) * (1 - played), PACK_MIN + (PACK_MAX - PACK_MIN) * played];
+  const [lit, body, shade] = look.shell;
 
-  const screw = (left: number, top: number) => (
-    <View key={`${left}-${top}`} style={{ position: 'absolute', left, top, width: 3.6 * u, height: 3.6 * u, borderRadius: 2 * u, backgroundColor: SCREW, alignItems: 'center', justifyContent: 'center' }}>
-      <View style={{ width: 2.4 * u, height: 0.5 * u, backgroundColor: '#555', transform: [{ rotate: '45deg' }] }} />
+  const screw = (l: number, t: number) => (
+    <View key={`${l}-${t}`} style={{ position: 'absolute', left: (l - 1.6) * u, top: (t - 1.6) * u, width: 3.2 * u, height: 3.2 * u, borderRadius: 2 * u, backgroundColor: SCREW, backgroundImage: 'radial-gradient(circle at 35% 35%, #F4F4F4 0%, #A6A6A6 55%, #555555 100%)', alignItems: 'center', justifyContent: 'center' }}>
+      <View style={{ position: 'absolute', width: 2 * u, height: 0.3 * u, backgroundColor: '#2A2A2A' }} />
+      <View style={{ position: 'absolute', width: 0.3 * u, height: 2 * u, backgroundColor: '#2A2A2A' }} />
     </View>
   );
 
-  return (
-    <View
-      style={{
-        width,
-        height: h,
-        borderRadius: 3 * u,
-        backgroundColor: clear ? SHELL_CLEAR : SHELL_BLACK,
-        borderWidth: Math.max(1, 0.6 * u),
-        borderColor: clear ? SHELL_CLEAR_EDGE : SHELL_BLACK_EDGE,
-        overflow: 'hidden',
-        backgroundImage: clear
-          ? 'linear-gradient(135deg, rgba(255,255,255,0.45) 0%, rgba(255,255,255,0.05) 40%, rgba(255,255,255,0.25) 100%)'
-          : 'linear-gradient(180deg, rgba(255,255,255,0.08) 0%, rgba(255,255,255,0) 30%, rgba(0,0,0,0.25) 100%)',
-        boxShadow: `0px ${2 * u}px ${4 * u}px rgba(0,0,0,0.35)`,
-      }}
-    >
-      {clear ? (
-        <>
-          {/* Through a clear shell: the tape packs, the red leader and the turning hubs, all on show. */}
-          {hubs.map((x, i) => (
-            <View key={`pack-${i}`} style={{ position: 'absolute', left: x - (packs[i] ?? packMin), top: hubY - (packs[i] ?? packMin), width: (packs[i] ?? packMin) * 2, height: (packs[i] ?? packMin) * 2, borderRadius: 40 * u, backgroundColor: TAPE, borderWidth: 0.6 * u, borderColor: TAPE_EDGE, opacity: 0.9 }} />
-          ))}
-          <View style={{ position: 'absolute', left: 44 * u, top: 27 * u, width: 12 * u, height: 7 * u, backgroundColor: LEADER, opacity: 0.85 }} />
-          {hubs.map((x, i) => (
-            <Hub key={`hub-${i}`} left={x - hubR} top={hubY - hubR} r={hubR} u={u} clear spinStyle={spinStyle} />
-          ))}
-        </>
-      ) : (
-        <>
-          {/* A black shell's face: the long smoked window across its middle, the tape packs and white hubs seen through
-              it, a bevel round its edge and a glint across the plastic. */}
-          <View style={{ position: 'absolute', left: WIN_L * u, top: WIN_T * u, width: (WIN_R - WIN_L) * u, height: (WIN_B - WIN_T) * u, borderRadius: 2.2 * u, overflow: 'hidden', backgroundColor: WINDOW, borderWidth: 0.6 * u, borderColor: WINDOW_EDGE }}>
-            {hubs.map((x, i) => (
-              <View key={`pack-${i}`} style={{ position: 'absolute', left: x - WIN_L * u - (packs[i] ?? packMin), top: hubY - WIN_T * u - (packs[i] ?? packMin), width: (packs[i] ?? packMin) * 2, height: (packs[i] ?? packMin) * 2, borderRadius: 40 * u, backgroundColor: TAPE, borderWidth: 0.5 * u, borderColor: TAPE_EDGE, backgroundImage: `radial-gradient(circle, ${TAPE} 40%, ${TAPE_EDGE} 100%)` }} />
-            ))}
-            {/* The tape running across the bottom of the window between the packs. */}
-            <View style={{ position: 'absolute', left: 0, right: 0, bottom: 1.5 * u, height: 0.9 * u, backgroundColor: TAPE }} />
-            {hubs.map((x, i) => (
-              <Hub key={`hub-${i}`} left={x - WIN_L * u - hubR} top={hubY - WIN_T * u - hubR} r={hubR} u={u} spinStyle={spinStyle} />
-            ))}
-            {/* The smoked plastic over it all, and its glint. */}
-            <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundImage: 'linear-gradient(160deg, rgba(255,255,255,0.22) 0%, rgba(255,255,255,0.04) 35%, rgba(0,0,0,0.25) 100%)' }} />
+  /** The writing on the label or sticker: the "A" box, the title in pen on its line, the length printed small. */
+  const writing = (
+    <View style={{ flex: 1, flexDirection: 'row', alignItems: 'flex-end', gap: 2 * u, paddingHorizontal: 2.5 * u, paddingBottom: 1.2 * u }}>
+      <View style={{ width: 5.5 * u, height: 5.5 * u, marginBottom: 1.4 * u, backgroundColor: look.side, alignItems: 'center', justifyContent: 'center' }}>
+        <Text style={{ color: look.label, fontSize: 4.2 * u, lineHeight: 5 * u, fontWeight: '700' }}>A</Text>
+      </View>
+      <View style={{ flex: 1 }}>
+        <Text numberOfLines={1} style={[typography.hand, { color: look.ink, fontSize: 8 * u, lineHeight: 9.5 * u, paddingRight: 0 }]}>
+          {title}
+        </Text>
+        <View style={{ height: Math.max(0.5, 0.25 * u), backgroundColor: look.ink, opacity: 0.35 }} />
+      </View>
+      {detail ? <Text style={[typography.stamp, { position: 'absolute', right: 2.5 * u, top: 1 * u, color: look.ink, opacity: 0.6, fontSize: 3.6 * u, lineHeight: 4.4 * u, paddingRight: 0 }]}>{detail}</Text> : null}
+    </View>
+  );
+
+  const foot = (
+    <View style={{ position: 'absolute', left: 19 * u, right: 19 * u, bottom: 0, height: 11 * u, borderTopLeftRadius: 1.5 * u, borderTopRightRadius: 1.5 * u, backgroundColor: look.clear ? 'rgba(255,255,255,0.08)' : look.foot, borderWidth: Math.max(0.5, 0.3 * u), borderBottomWidth: 0, borderColor: look.clear ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.12)', flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly', paddingTop: 2 * u }}>
+      {[3.2, 3.4, 5, 3.4, 3.2].map((s, i) => (
+        <View key={i} style={{ width: s * u, height: (i === 2 ? 3.2 : s) * u, borderRadius: i === 1 || i === 3 ? 2 * u : 0.5 * u, backgroundColor: 'rgba(5,5,5,0.85)' }} />
+      ))}
+    </View>
+  );
+
+  if (look.clear) {
+    return (
+      <View style={{ width, height: h, borderRadius: 3.5 * u, overflow: 'hidden', backgroundColor: body, backgroundImage: `linear-gradient(135deg, ${lit} 0%, ${body} 60%, ${shade} 100%)`, borderWidth: Math.max(1, 0.7 * u), borderColor: look.edge, boxShadow: `0px ${2 * u}px ${4 * u}px rgba(0,0,0,0.4)` }}>
+        {/* Through the clear shell: the tape packs, the tape round the corner rollers, the hubs. */}
+        {HUB_X.map((x, i) => <Pack key={x} cx={x * u} cy={HUB_Y * u} r={packs[i] ?? PACK_MIN} u={u} tape={look.tape} />)}
+        <View style={{ position: 'absolute', left: 12 * u, right: 12 * u, top: 58 * u, height: Math.max(1, 0.8 * u), backgroundColor: '#1A120C' }} />
+        {[10.5, 89.5].map((x) => (
+          <View key={x} style={{ position: 'absolute', left: (x - 2.5) * u, top: 53.5 * u, width: 5 * u, height: 5 * u, borderRadius: 3 * u, backgroundColor: look.accent, alignItems: 'center', justifyContent: 'center' }}>
+            <View style={{ width: 1.6 * u, height: 1.6 * u, borderRadius: 1 * u, backgroundColor: '#F2F2F2' }} />
           </View>
-        </>
-      )}
-
-      {/* The paper label across the top: the "A" box and the title in handwriting on its line, a red printed stripe under it. */}
-      <View style={{ position: 'absolute', left: 6 * u, right: 6 * u, top: 17.6 * u, height: 1.6 * u, backgroundColor: BAND_STRIPE, opacity: clear ? 0.8 : 1 }} />
-      <View style={{ position: 'absolute', left: 6 * u, right: 6 * u, top: 4 * u, height: 13.6 * u, borderRadius: 1.2 * u, backgroundColor: LABEL, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 * u, gap: 2 * u, opacity: clear ? 0.92 : 1 }}>
-        <View style={{ width: 7 * u, height: 7 * u, backgroundColor: '#4A2A3A', alignItems: 'center', justifyContent: 'center' }}>
-          <Text style={{ color: LABEL, fontSize: 5 * u, lineHeight: 6 * u, fontWeight: '700' }}>A</Text>
-        </View>
-        <View style={{ flex: 1, height: 10 * u, justifyContent: 'flex-end' }}>
-          <Text numberOfLines={1} style={[typography.hand, { color: INK, fontSize: 8 * u, lineHeight: 9.5 * u, paddingRight: 0 }]}>
-            {title}
-          </Text>
-          <View style={{ height: 0.4 * u, backgroundColor: '#9A9A9A' }} />
-        </View>
-      </View>
-
-      {/* The printed band under the window. */}
-      {!clear ? (
-        <View style={{ position: 'absolute', left: 6 * u, right: 6 * u, top: 44 * u, height: 7 * u, borderRadius: 0.8 * u, backgroundColor: BAND, flexDirection: 'row', alignItems: 'center', paddingHorizontal: 2 * u, justifyContent: 'space-between', overflow: 'hidden' }}>
-          <Text style={[typography.stamp, { color: '#2A2118', fontSize: 4 * u, lineHeight: 5 * u, letterSpacing: 0.4 * u, paddingRight: 0 }]}>LOOKBACK</Text>
-          <View style={{ position: 'absolute', left: 40 * u, top: 0, bottom: 0, width: 12 * u, backgroundColor: BAND_STRIPE, opacity: 0.85 }} />
-          <Text style={[typography.stamp, { color: '#2A2118', fontSize: 4 * u, lineHeight: 5 * u, letterSpacing: 0.2 * u, paddingRight: 0 }]}>{detail ?? 'C·60'}</Text>
-        </View>
-      ) : null}
-
-      {/* The trapezoid at the foot, with its holes. */}
-      <View style={{ position: 'absolute', left: 20 * u, right: 20 * u, bottom: 0, height: 9 * u, borderTopLeftRadius: 2 * u, borderTopRightRadius: 2 * u, backgroundColor: clear ? 'rgba(200,200,206,0.4)' : '#141416', borderWidth: 0.4 * u, borderColor: clear ? SHELL_CLEAR_EDGE : SHELL_BLACK_EDGE, flexDirection: 'row', alignItems: 'center', justifyContent: 'space-evenly' }}>
-        {[0, 1, 2, 3].map((i) => (
-          <View key={i} style={{ width: (i === 1 || i === 2 ? 2.5 : 3.5) * u, height: (i === 1 || i === 2 ? 2.5 : 3.5) * u, borderRadius: 2 * u, backgroundColor: clear ? 'rgba(40,40,44,0.5)' : '#050505' }} />
         ))}
+        {HUB_X.map((x) => <Hub key={x} cx={x * u} cy={HUB_Y * u} u={u} spinStyle={spinStyle} />)}
+        {/* The frosted plastic over it (clearer in the window), its moulded window frame and a broad reflection. */}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundImage: 'linear-gradient(150deg, rgba(255,255,255,0) 18%, rgba(255,255,255,0.16) 32%, rgba(255,255,255,0) 46%, rgba(255,255,255,0.06) 70%, rgba(255,255,255,0) 80%)' }} />
+        <View pointerEvents="none" style={{ position: 'absolute', left: 23 * u, top: 23.5 * u, width: 54 * u, height: 15.5 * u, borderRadius: 2 * u, borderWidth: Math.max(0.5, 0.3 * u), borderColor: 'rgba(255,255,255,0.45)' }} />
+        {foot}
+        {/* The paper sticker across the top. */}
+        <View style={{ position: 'absolute', left: 7.5 * u, right: 7.5 * u, top: 4 * u, height: 11.5 * u, borderRadius: 0.6 * u, backgroundColor: look.label, boxShadow: `0px ${0.3 * u}px ${0.5 * u}px ${STICKER_SHADE}` }}>{writing}</View>
+        {[screw(4, 4), screw(96, 4), screw(4, 59), screw(96, 59), screw(50, 49.3)]}
       </View>
+    );
+  }
 
-      {[screw(1.5 * u, 1.5 * u), screw(width - 5.5 * u, 1.5 * u), screw(1.5 * u, h - 5.5 * u), screw(width - 5.5 * u, h - 5.5 * u), screw(width / 2 - 1.8 * u, h - 13.5 * u)]}
+  return (
+    <View style={{ width, height: h, borderRadius: 4 * u, overflow: 'hidden', backgroundColor: body, backgroundImage: `linear-gradient(180deg, ${lit} 0%, ${body} 45%, ${shade} 100%)`, borderWidth: Math.max(1, 0.5 * u), borderColor: look.edge, boxShadow: `0px ${2 * u}px ${4 * u}px rgba(0,0,0,0.35)` }}>
+      {/* The paper label: the writing strip on top, printed stripes behind the window. */}
+      <View style={{ position: 'absolute', left: 7 * u, right: 7 * u, top: 4.5 * u, height: 41.5 * u, borderRadius: 1.6 * u, overflow: 'hidden', backgroundColor: look.label, boxShadow: `0px ${0.3 * u}px ${0.5 * u}px ${STICKER_SHADE}` }}>
+        <View style={{ height: 13 * u }}>{writing}</View>
+        {look.stripes.length > 1 ? (
+          <View style={{ position: 'absolute', left: 0, right: 0, top: 17 * u, height: 18.8 * u }}>
+            {look.stripes.map((s) => <View key={s} style={{ flex: 1, backgroundColor: s }} />)}
+          </View>
+        ) : look.stripes[0] ? (
+          <>
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 13.9 * u, height: 2 * u, backgroundColor: look.stripes[0] }} />
+            <View style={{ position: 'absolute', left: 0, right: 0, top: 37 * u, height: 1.1 * u, backgroundColor: look.stripes[0], opacity: 0.8 }} />
+          </>
+        ) : null}
+      </View>
+      {/* The window: a stadium round the two hubs, smoky plastic onto the tape. */}
+      <View style={{ position: 'absolute', left: 19.5 * u, top: 23.5 * u, width: 61 * u, height: 16 * u, borderRadius: 8 * u, overflow: 'hidden', backgroundColor: look.window, borderWidth: Math.max(0.5, 0.6 * u), borderColor: '#0E0B09' }}>
+        {HUB_X.map((x, i) => <Pack key={x} cx={(x - 19.5) * u} cy={(HUB_Y - 23.5) * u} r={packs[i] ?? PACK_MIN} u={u} tape={look.tape} />)}
+        {HUB_X.map((x) => <Hub key={x} cx={(x - 19.5) * u} cy={(HUB_Y - 23.5) * u} u={u} spinStyle={spinStyle} />)}
+        <View pointerEvents="none" style={{ position: 'absolute', left: 0, right: 0, top: 0, bottom: 0, backgroundImage: 'linear-gradient(160deg, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.03) 40%, rgba(0,0,0,0.2) 100%)' }} />
+      </View>
+      {foot}
+      {[screw(4, 4), screw(96, 4), screw(4, 59), screw(96, 59), screw(50, 48.8)]}
     </View>
   );
 });

@@ -34,7 +34,8 @@ import { Texture } from './scrapbook/Texture';
  * it's stamped "kept"). Buttons stay at the foot of the screen, under the thumb.
  */
 
-export type FlightState = 'waiting' | 'connecting' | 'moving' | 'done' | 'failed' | 'declined';
+/** `sealed`: their phone couldn't be reached, so the page waits for them in the sealed mailbox (lib/mailbox.ts). */
+export type FlightState = 'waiting' | 'connecting' | 'moving' | 'done' | 'sealed' | 'failed' | 'declined';
 
 const SEAL = 112;
 /** Their portrait's height inside the rings (its corners just clear the progress ring). */
@@ -149,11 +150,11 @@ export function GiftFlight({
 
   useEffect(() => {
     if (!visible) return;
-    const target = state === 'done' ? 1 : state === 'moving' ? Math.max(0.08, progress) : state === 'connecting' ? 0.04 : 0;
+    const target = state === 'done' || state === 'sealed' ? 1 : state === 'moving' ? Math.max(0.08, progress) : state === 'connecting' ? 0.04 : 0;
     ring.set(withTiming(target, { duration: 420, easing: Easing.out(Easing.cubic) }));
     // The page leaves your hand as the bytes go (receiving: it comes down as they arrive).
-    p.set(withTiming(state === 'done' ? 1 : target * 0.75, { duration: state === 'done' ? 520 : 420, easing: Easing.inOut(Easing.cubic) }));
-    if (state === 'done') {
+    p.set(withTiming(state === 'done' || state === 'sealed' ? 1 : target * 0.75, { duration: state === 'done' || state === 'sealed' ? 520 : 420, easing: Easing.inOut(Easing.cubic) }));
+    if (state === 'done' || state === 'sealed') {
       landed.set(withDelay(380, withTiming(1, { duration: 360, easing: Easing.out(Easing.back(1.6)) })));
       sealPop.set(withDelay(direction === 'out' ? 420 : 0, withSequence(withTiming(1, { duration: 140 }), withSpring(0, { damping: 9 }))));
       const t = setTimeout(direction === 'out' ? successHaptic : arriveHaptic, 420);
@@ -206,6 +207,7 @@ export function GiftFlight({
           connecting: `${name} accepted · finding their phone…`,
           moving: `Passing it to ${name}… ${Math.round(progress * 100)}%`,
           done: `${name} has it now`,
+          sealed: `Sealed and on its way to ${name}`,
           failed: `The connection dropped. It'll go when you're both online.`,
           declined: `${name} said not now`,
         }[state]
@@ -214,17 +216,20 @@ export function GiftFlight({
           connecting: `Connecting to ${name}'s phone…`,
           moving: `Coming across from ${name}… ${Math.round(progress * 100)}%`,
           done: `It's yours now`,
+          sealed: `It's yours now`,
           failed: `It didn't come through. Ask ${name} to give it again.`,
           declined: `Not now`,
         }[state]);
   const sub = problemWords
     ? problemWords.sub
-    : state === 'done'
+    : state === 'sealed'
+      ? `Their phone wasn't reachable, so it waits for them sealed: only ${name}'s phone can open it, and it's thrown away once they have it.`
+      : state === 'done'
       ? direction === 'out'
         ? 'Straight from your phone to theirs. Nothing was kept anywhere in between.'
         : 'Kept on this phone only.'
       : live
-        ? 'Phone to phone, encrypted. Never online.'
+        ? 'Phone to phone, encrypted end to end.'
         : '';
 
   return (

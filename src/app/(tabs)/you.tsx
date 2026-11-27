@@ -174,7 +174,7 @@ function AccountCard({ palette }: { palette: YearPalette }) {
               <HardwareButton label={busy ? 'Connecting…' : 'Connect again'} icon="logo-google" tone="primary" onPress={connect} disabled={busy} />
             </>
           )}
-          <Help>{`Your diary is backed up to a "${backup?.folder ?? 'LookBack'}" folder in your Drive once a day. Pages you give go straight from your phone to theirs, never online.`}</Help>
+          <Help>{`Your diary is backed up to a "${backup?.folder ?? 'LookBack'}" folder in your Drive once a day. Pages you give go straight from your phone to theirs, or wait sealed so only their phone can open them.`}</Help>
           <View style={{ height: spacing.sm }} />
           <HardwareButton label="Delete sharing account" icon="trash-outline" tone="danger" onPress={() => setAskDelete(true)} disabled={busy} />
         </>

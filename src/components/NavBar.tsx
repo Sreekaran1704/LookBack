@@ -34,7 +34,9 @@ const NavBarContext = createContext<NavBarState>({ action: null, setAction: () =
  * The bar is for moving between the three main pages. Pages you open into (a memory, a year's diary, the
  * writing page, the first-run questions) have their own action bar instead, so the bar steps aside there.
  */
-const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/', '/letter', '/settings', '/portrait'];
+/** How far the fade under the phone's own buttons reaches up into the page. */
+const FADE_ABOVE = 18;
+const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/', '/letter', '/settings', '/portrait', '/person/'];
 
 export function NavBarProvider({ children }: { children: ReactNode }) {
   const [action, setAction] = useState<NavAction | null>(null);
@@ -115,7 +117,7 @@ const WRITE_AT = 2;
  * given to you are still unopened. Settings opens from You.
  */
 export function NavBar() {
-  const { motion } = useTheme();
+  const { motion, colors } = useTheme();
   const insets = useSafeAreaInsets();
   const pathname = usePathname();
   const { action } = useContext(NavBarContext);
@@ -171,9 +173,25 @@ export function NavBar() {
   ];
 
   return (
-    <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.wrap, barStyle]}>
-      <PaperTabs items={items} slide={on >= 0 ? pagerPosition : undefined} bottomInset={insets.bottom} center={<WriteButton />} centerAt={WRITE_AT} />
-    </Animated.View>
+    <>
+      {/* The strip under the phone's own buttons stays covered even when the bar tucks away while scrolling, so the
+          page never shows loose behind them (3-button navigation leaves a tall strip). Static: no per-frame cost. */}
+      {insets.bottom > 0 && !hidden ? (
+        <View
+          pointerEvents="none"
+          style={[
+            styles.wrap,
+            {
+              height: insets.bottom + FADE_ABOVE,
+              backgroundImage: `linear-gradient(180deg, ${withAlpha(colors.desk, 0)} 0%, ${withAlpha(colors.desk, 0.9)} ${Math.round((FADE_ABOVE / (insets.bottom + FADE_ABOVE)) * 100)}%, ${colors.desk} 100%)`,
+            },
+          ]}
+        />
+      ) : null}
+      <Animated.View pointerEvents={hidden ? 'none' : 'box-none'} style={[styles.wrap, barStyle]}>
+        <PaperTabs items={items} slide={on >= 0 ? pagerPosition : undefined} bottomInset={insets.bottom} center={<WriteButton />} centerAt={WRITE_AT} />
+      </Animated.View>
+    </>
   );
 }
 

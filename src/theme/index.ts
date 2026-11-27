@@ -13,6 +13,7 @@ import {
   typography,
   type ColorTokens,
 } from './tokens';
+import { cassetteStyle, type CassetteStyle } from './cassettes';
 import { DAY_CARD_LIFT, DEFAULT_LOOK, navColors, paperByName, type Look, type NavColors, type Paper } from './papers';
 import { mixHex, withAlpha, yearPalette, type YearPalette } from './yearColors';
 
@@ -25,6 +26,8 @@ export interface Theme {
   paper: Paper;
   /** The bottom bar's colors, matched to the paper and tone. */
   nav: NavColors;
+  /** The cassette the person picked: the app icon and every cassette drawn in the app. */
+  cassette: CassetteStyle;
   colors: ColorTokens;
   spacing: typeof spacing;
   /** One size and make for every control (bar, buttons, slips, switches). */
@@ -50,7 +53,7 @@ const CARD_DIM_NIGHT = 0.06;
 
 /** The whole theme for a look: the chosen leather as the desk (the cover every page sits on), by day or lamplight. */
 export function makeTheme(look: Look): Theme {
-  const key = `${look.paper}:${look.tone}`;
+  const key = `${look.paper}:${look.tone}:${look.cassette}`;
   const hit = cache.get(key);
   if (hit) return hit;
   const paper = paperByName(look.paper);
@@ -86,6 +89,7 @@ export function makeTheme(look: Look): Theme {
     lite: false,
     paper,
     nav: navColors(paper, look.tone),
+    cassette: cassetteStyle(look.cassette),
     colors,
     ...base,
     // Soft warm shadows on the pale day cover; deep ones at night.
@@ -122,3 +126,4 @@ export function useLook(): Pick<ThemeContextValue, 'look' | 'setLook'> {
 export * from './tokens';
 export * from './yearColors';
 export * from './papers';
+export * from './cassettes';

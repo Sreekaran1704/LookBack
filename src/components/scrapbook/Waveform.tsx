@@ -61,6 +61,7 @@ export const Waveform = memo(function Waveform({
   color,
   progress,
   playing = false,
+  heart: withHeart = true,
 }: {
   wave: readonly number[] | null;
   width: number;
@@ -68,6 +69,8 @@ export const Waveform = memo(function Waveform({
   color: string;
   progress?: SharedValue<number>;
   playing?: boolean;
+  /** The little heart at the playhead (off for the live waveform while recording). */
+  heart?: boolean;
 }) {
   const { colors } = useTheme();
   const reduceMotion = useReducedMotion();
@@ -97,11 +100,13 @@ export const Waveform = memo(function Waveform({
           <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: 0, height, overflow: 'hidden' }, played]}>
             <Bars wave={bars} width={width} height={height} color={color} />
           </Animated.View>
-          <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: (height - heart) / 2, width: heart, height: heart }, heartStyle]}>
-            <Svg width={heart} height={heart} viewBox="0 0 24 24">
-              <Path d={HEART_PATH} fill={color} stroke={colors.paperWhite} strokeWidth={2.4} strokeLinejoin="round" />
-            </Svg>
-          </Animated.View>
+          {withHeart ? (
+            <Animated.View pointerEvents="none" style={[{ position: 'absolute', left: 0, top: (height - heart) / 2, width: heart, height: heart }, heartStyle]}>
+              <Svg width={heart} height={heart} viewBox="0 0 24 24">
+                <Path d={HEART_PATH} fill={color} stroke={colors.paperWhite} strokeWidth={2.4} strokeLinejoin="round" />
+              </Svg>
+            </Animated.View>
+          ) : null}
         </>
       ) : null}
     </View>

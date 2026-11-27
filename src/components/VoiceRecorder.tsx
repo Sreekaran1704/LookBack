@@ -8,6 +8,7 @@ import { formatVoiceMs, levelFromDb, shapeWaveform, VOICE_MAX_MS, WAVE_BARS } fr
 import { useTheme } from '../theme';
 import { ActionRow, type BarAction } from './Screen';
 import { sheetIn, sheetOut } from './transitions';
+import { RecordingDeck } from './scrapbook/RecordingDeck';
 import { Waveform, type VoicePlayer } from './scrapbook/Waveform';
 
 /** A recording made on the writing page, not saved yet (or the saved one, while editing). */
@@ -105,17 +106,19 @@ export function useVoiceRecording(onDone: (draft: VoiceDraft) => void): VoiceRec
 
 /**
  * A slim strip just above the writing page's buttons, made like them (One UI style, every button
- * labelled): while recording, the waveform drawing itself as you speak, the time, and Done; once
+ * labelled): while recording, the cassette recording in its deck above (RecordingDeck), then the live
+ * waveform, the time, and Done; once
  * recorded, its length, then Listen, Re-record and Remove. Nothing otherwise (Voice in the bar below
  * starts a recording). It eases up into place and away again.
  */
 export function VoiceStrip({ rec, value, player, onRemove, accent }: { rec: VoiceRecording; value: VoiceDraft | null; player?: VoicePlayer; onRemove: () => void; accent: string }) {
   const theme = useTheme();
-  const { colors, spacing, sizes, typography, nav } = theme;
+  const { colors, spacing, sizes, typography } = theme;
   const reduceMotion = useReducedMotion();
+  const [deckW, setDeckW] = useState(0);
   const [waveW, setWaveW] = useState(0);
   const pulse = useSharedValue(0);
-  /** While recording the waveform is all "heard": full color, the heart on the newest bar. */
+  /** The live waveform is all "heard" (full colour); no heart riding on it. */
   const full = useSharedValue(1);
 
   useEffect(() => {
@@ -131,20 +134,19 @@ export function VoiceStrip({ rec, value, player, onRemove, accent }: { rec: Voic
   const waveH = sizes.circleButton * 0.55;
   const live = rec.levels.slice(-WAVE_BARS);
   const liveWave = [...Array.from({ length: WAVE_BARS - live.length }, () => 0.06), ...live];
-
   const lead = rec.recording ? (
     <View style={{ flex: 2.6, flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingLeft: spacing.md }}>
-      {/* The red recording lamp. */}
+      {/* The red recording lamp, the voice drawing itself as you speak, the time. */}
       <Animated.View style={[{ width: sizes.iconSmall, height: sizes.iconSmall, borderRadius: sizes.iconSmall / 2, backgroundColor: colors.wax, borderWidth: 1, borderColor: colors.gilt }, dotStyle]} />
       <View style={{ flex: 1, height: waveH }} onLayout={(e) => setWaveW(e.nativeEvent.layout.width)}>
-        {waveW > 0 ? <Waveform wave={liveWave} width={waveW} height={waveH} color={accent} progress={full} playing /> : null}
+        {waveW > 0 ? <Waveform wave={liveWave} width={waveW} height={waveH} color={colors.inkBlue} progress={full} heart={false} /> : null}
       </View>
-      <Text style={[typography.label, { color: nav.ink }]}>{formatVoiceMs(rec.elapsed)} </Text>
+      <Text style={[typography.label, { color: colors.ink }]}>{formatVoiceMs(rec.elapsed)} </Text>
     </View>
   ) : value ? (
     <View style={{ flex: 1, alignItems: 'center', gap: 1 }}>
       <Ionicons name="mic" size={sizes.icon} color={accent} />
-      <Text numberOfLines={1} style={[typography.small, { color: nav.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
+      <Text numberOfLines={1} style={[typography.small, { color: colors.inkMuted, alignSelf: 'stretch', textAlign: 'center' }]}>
         {formatVoiceMs(value.ms)}
       </Text>
     </View>
@@ -170,7 +172,8 @@ export function VoiceStrip({ rec, value, player, onRemove, accent }: { rec: Voic
       ];
 
   return (
-    <Animated.View entering={sheetIn(reduceMotion)} exiting={sheetOut(reduceMotion)} style={{ marginHorizontal: spacing.gutter }}>
+    <Animated.View entering={sheetIn(reduceMotion)} exiting={sheetOut(reduceMotion)} style={{ marginHorizontal: spacing.gutter, gap: spacing.sm }} onLayout={(e) => setDeckW(e.nativeEvent.layout.width)}>
+      {rec.recording && deckW > 0 ? <RecordingDeck width={deckW} elapsed={rec.elapsed} /> : null}
       <ActionRow lead={lead} actions={actions} tapes={false} />
     </Animated.View>
   );

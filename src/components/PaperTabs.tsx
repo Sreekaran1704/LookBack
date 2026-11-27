@@ -103,6 +103,19 @@ export function PaperTabs({
   });
   return (
     <View style={[{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, paddingHorizontal: spacing.gutter, paddingTop: spacing.xs, paddingBottom: bottomInset + spacing.sm, width: maxW ? maxW + spacing.gutter * 2 : undefined, alignSelf: 'center' }, style]} pointerEvents="box-none">
+      {/* The page fades out under the bar and the phone's own buttons, so nothing shows loose behind them (3-button
+          navigation leaves a tall strip at the foot). A static gradient: costs nothing per frame. */}
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: 0,
+          right: 0,
+          top: -spacing.lg,
+          bottom: 0,
+          backgroundImage: `linear-gradient(180deg, ${withAlpha(colors.desk, 0)} 0%, ${withAlpha(colors.desk, 0.85)} 45%, ${colors.desk} 100%)`,
+        }}
+      />
       <View style={{ flex: 1, height: barH, borderRadius: control.radius, backgroundColor: bar.bg, boxShadow: theme.shadow(undefined, 1.2) }}>
         <Texture kind="paper" opacity={bar.texture} radius={control.radius} />
         <Stitches radius={control.radius} />

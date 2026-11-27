@@ -13,6 +13,7 @@ const KEY_PROFILE = 'profile';
 const KEY_ONBOARDED = 'onboarded';
 const KEY_BACKUP = 'backup';
 const KEY_AUTO_ACCEPT = 'pagesArriveByThemselves';
+const KEY_WIDGET_PERSON = 'widgetPerson';
 
 const NO_BACKUP: BackupInfo = { account: null, lastBackupAt: null };
 
@@ -38,6 +39,9 @@ export interface SettingsRepository {
   /** Whether pages from your people come in without asking (on unless turned off). */
   getAutoAccept(): Promise<boolean>;
   setAutoAccept(on: boolean): Promise<void>;
+  /** Whose pages the "From your person" widget shows (null: whoever gave you something last). */
+  getWidgetPerson(): Promise<string | null>;
+  setWidgetPerson(id: string | null): Promise<void>;
   setBackup(patch: Partial<BackupInfo>): Promise<BackupInfo>;
   subscribe(listener: () => void): () => void;
 }
@@ -138,6 +142,12 @@ function createSqliteSettingsRepository(): SettingsRepository {
     },
     async setAutoAccept(on) {
       await write(KEY_AUTO_ACCEPT, on ? '1' : '0');
+    },
+    async getWidgetPerson() {
+      return (await read(KEY_WIDGET_PERSON)) || null;
+    },
+    async setWidgetPerson(id) {
+      await write(KEY_WIDGET_PERSON, id ?? '');
     },
     async setBackup(patch) {
       const db = await getDb();

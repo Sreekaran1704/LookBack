@@ -27,13 +27,14 @@
 <main>
   <div class="card">
     <h1>LookBack privacy policy</h1>
-    <p class="sub">Last updated: 23 November 2026 · applies to the LookBack app for Android (package <code>com.yearbook.app</code>)</p>
+    <p class="sub">Last updated: 26 November 2026 · applies to the LookBack app for Android (package <code>com.yearbook.app</code>)</p>
 
     <p>LookBack is a little journal: you save one small thing a day (a few words, a photo, or a voice note) and the app
       brings it back on the same day next year. It is made by an individual developer. This page explains what the app
       does with your information. The short version: <strong>your memories stay on your phone, and in your own Google
-      Drive only if you switch backup on. If you give a page to someone, it goes straight from your phone to theirs.
-      No memory is ever sent to or stored on a server of ours. No ads, no analytics.</strong></p>
+      Drive only if you switch backup on. If you give a page to someone, it goes straight from your phone to theirs, or,
+      when their phone can't be reached, waits for them sealed so that only their phone can open it. We can never read
+      your memories. No ads, no analytics.</strong></p>
 
     <h2>What stays on your phone</h2>
     <ul>
@@ -64,7 +65,13 @@
     <h2>Giving a page to someone (optional)</h2>
     <p>You can give one of your pages to someone you have added (beside you over Bluetooth, or with their code). The page
       itself (words, photo, recording) goes <strong>directly from your phone to theirs</strong> over an end-to-end
-      encrypted connection, and is saved only on their phone. It never passes through or is stored on a server.</p>
+      encrypted connection, and is saved only on their phone.</p>
+    <p>When their phone can't be reached right then (it is off, or on a network that blocks direct connections), your
+      phone <strong>seals the page so that only their phone can open it</strong> (end-to-end encryption with their phone's
+      key, signed with yours) and leaves the sealed envelope in a private box on LookBack's service (Supabase). Their
+      phone picks it up the next time it is online, opens it, and the envelope is deleted. While it waits, the service
+      holds only scrambled bytes it cannot open, plus who it is from and for. If they never pick it up, you can take it
+      back by deleting your sharing account.</p>
     <p>To introduce two phones to each other, LookBack uses a small service of its own (hosted by Supabase), which keeps
       only this:</p>
     <ul>

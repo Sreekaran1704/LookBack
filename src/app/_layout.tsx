@@ -25,7 +25,8 @@ import { startPostman } from '../data/social/postman';
 import { preloadEntries, useAllEntries, useToday } from '../hooks/useData';
 import { configureNotifications, refreshReminders } from '../notifications/scheduler';
 import { useTheme } from '../theme';
-import { refreshWidget } from '../widget';
+import { refreshPersonWidget, refreshWidget } from '../widget';
+import { sharingRepository } from '../data/sharingRepository';
 
 /** How long the native splash takes to fade into the intro (the intro waits for it before moving). */
 const SPLASH_FADE_MS = 150;
@@ -109,12 +110,15 @@ export default function RootLayout() {
       refresh();
       refreshWidget(); // the widget is drawn on the chosen paper
     });
+    // A page from your person arrived, was opened or removed: their widget shows the newest.
+    const unsubSharing = sharingRepository.subscribe(refreshPersonWidget);
     return () => {
       cancelled = true;
       appState.remove();
       tapped.remove();
       unsubEntries();
       unsubSettings();
+      unsubSharing();
     };
   }, []);
 
@@ -202,6 +206,7 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
         <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="settings" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
         <Stack.Screen name="portrait" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
+        <Stack.Screen name="person/[id]" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
       </Stack>
       <NavBar />
       <GiftArrival />

@@ -10,7 +10,7 @@ import { useLook, useTheme, type PaperTone, type YearPalette } from '../theme';
 import { CardTitle, CheckRow, Help, Row } from './CardParts';
 import { SlideSwitch } from './Hardware';
 import { usePageActive } from './PageActive';
-import { PaperPicker } from './Pickers';
+import { CassettePicker, PaperPicker } from './Pickers';
 import { PressableScale } from './PressableScale';
 import { Panel } from './Screen';
 
@@ -36,6 +36,10 @@ export function LookCard({ palette }: { palette: YearPalette }) {
         <SlideSwitch<PaperTone> options={TONES} value={look.tone} onChange={(tone) => setLook({ ...look, tone })} />
       </View>
       <Help>The colour of your paper. Night is the same paper by lamplight.</Help>
+      <View style={{ paddingTop: spacing.md }}>
+        <CassettePicker value={look.cassette} onChange={(cassette) => setLook({ ...look, cassette })} />
+      </View>
+      <Help>Your cassette: the app icon and every tape in the diary. The icon changes once you leave the app.</Help>
     </Panel>
   );
 }

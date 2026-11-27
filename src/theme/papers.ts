@@ -5,6 +5,7 @@
  * `dots` is the paper's own muted accent (dot grid, tape, widget glow), `accent2` a partner color.
  * Pure module (no React Native imports).
  */
+import { DEFAULT_CASSETTE, isCassetteStyleId, type CassetteStyleId } from './cassettes';
 import { mixHex, withAlpha } from './yearColors';
 
 export type PaperTone = 'light' | 'dark';
@@ -58,9 +59,11 @@ export const DEFAULT_PAPER = 'ivory';
 export interface Look {
   paper: string;
   tone: PaperTone;
+  /** The cassette (app icon and every cassette in the app), see cassettes.ts. */
+  cassette: CassetteStyleId;
 }
 
-export const DEFAULT_LOOK: Look = { paper: DEFAULT_PAPER, tone: 'light' };
+export const DEFAULT_LOOK: Look = { paper: DEFAULT_PAPER, tone: 'light', cassette: DEFAULT_CASSETTE };
 
 export function paperByName(name: string | null | undefined): Paper {
   return PAPERS.find((p) => p.name === name) ?? (PAPERS[0] as Paper);
@@ -69,13 +72,14 @@ export function paperByName(name: string | null | undefined): Paper {
 /** Reads a stored look, tolerating missing or old values (the old setting was just 'system' | 'light' | 'dark'). */
 export function parseLook(raw: string | null | undefined): Look {
   if (!raw) return DEFAULT_LOOK;
-  if (raw === 'dark' || raw === 'light') return { paper: DEFAULT_PAPER, tone: raw };
+  if (raw === 'dark' || raw === 'light') return { paper: DEFAULT_PAPER, tone: raw, cassette: DEFAULT_CASSETTE };
   try {
     const value = JSON.parse(raw) as Partial<Look>;
     const name = typeof value.paper === 'string' ? (OLD_NAMES[value.paper] ?? value.paper) : undefined;
     return {
       paper: PAPERS.some((p) => p.name === name) ? (name as string) : DEFAULT_PAPER,
       tone: value.tone === 'dark' ? 'dark' : 'light',
+      cassette: isCassetteStyleId(value.cassette) ? value.cassette : DEFAULT_CASSETTE,
     };
   } catch {
     return DEFAULT_LOOK;

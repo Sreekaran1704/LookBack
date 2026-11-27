@@ -1,0 +1,252 @@
+<!doctype html>
+<!--
+  Google Play phone screenshots as one panorama (8 panels of 1080×1920), in LookBack's leather-diary style.
+  Rendered panel by panel by scripts/make-store-screens.mjs (?p=1…8). App screens go in raw/1.png … raw/8.png
+  (phone screenshots, 1272×2800); a missing one shows a placeholder.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<style>
+  @font-face { font-family: Cormorant; font-weight: 600; src: url('../../../node_modules/@expo-google-fonts/cormorant-garamond/600SemiBold/CormorantGaramond_600SemiBold.ttf'); }
+  @font-face { font-family: Cormorant; font-weight: 700; font-style: italic; src: url('../../../node_modules/@expo-google-fonts/cormorant-garamond/700Bold_Italic/CormorantGaramond_700Bold_Italic.ttf'); }
+  @font-face { font-family: Caveat; font-weight: 700; src: url('../../../node_modules/@expo-google-fonts/caveat/700Bold/Caveat_700Bold.ttf'); }
+
+  :root {
+    --oxblood: #8E2A20; --oxblood-deep: #5E1A13;
+    --leather: #1F3A2E; --leather-night: #14261D;
+    --page: #EFE4CC; --page-deep: #E2D2B0;
+    --ink: #2A2118; --sepia: #6B2A22;
+    --gilt: #E3C27C; --gilt-mid: #C9A45C; --gilt-deep: #8E6F33;
+    --tape: #3B2414;
+    --W: 1080px; --H: 1920px;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { width: var(--W); height: var(--H); overflow: hidden; background: #000; }
+  #pano { position: absolute; top: 0; left: 0; width: calc(var(--W) * 8); height: var(--H); }
+
+  .panel { position: absolute; top: 0; width: var(--W); height: var(--H); overflow: hidden; }
+  .panel::after { /* leather / paper grain */
+    content: ''; position: absolute; inset: 0; pointer-events: none; opacity: .5; mix-blend-mode: overlay;
+    background-image: radial-gradient(rgba(255,255,255,.18) 1px, transparent 1.4px), radial-gradient(rgba(0,0,0,.22) 1px, transparent 1.4px);
+    background-size: 7px 7px, 11px 11px; background-position: 0 0, 3px 5px;
+  }
+  .oxblood { background: radial-gradient(120% 80% at 30% 10%, #B23A2C 0%, var(--oxblood) 45%, var(--oxblood-deep) 100%); }
+  .page { background: radial-gradient(130% 90% at 30% 10%, #F8F0DD 0%, var(--page) 55%, var(--page-deep) 100%); }
+  .page::before { /* printed dots of the diary page */
+    content: ''; position: absolute; inset: 0; opacity: .55;
+    background-image: radial-gradient(#C9B48C 2.2px, transparent 2.6px); background-size: 46px 46px;
+  }
+  .night { background: radial-gradient(70% 45% at 70% 18%, rgba(200,150,12,.55), transparent 70%), radial-gradient(130% 90% at 50% 40%, #1A3226 0%, var(--leather-night) 60%, #0B1611 100%); }
+  .leather { background: radial-gradient(130% 90% at 30% 10%, #2A4D3D 0%, var(--leather) 55%, #11241B 100%); }
+
+  /* Headlines: 2–4 words, the key word huge and italic. */
+  .head { position: absolute; left: 80px; right: 70px; top: 120px; z-index: 5; }
+  .head .lead { font: 600 92px/1 Cormorant, serif; letter-spacing: .5px; }
+  .head .key { display: block; font: italic 700 230px/0.86 Cormorant, serif; margin-left: -6px; }
+  .head .note { font: 700 54px/1.1 Caveat, cursive; margin-top: 22px; }
+  .on-dark .lead { color: #F4E9D2; } .on-dark .key { color: var(--gilt); text-shadow: 0 4px 0 rgba(0,0,0,.25); }
+  .on-dark .note { color: rgba(244,233,210,.85); }
+  .on-red .lead { color: #FBEFD9; } .on-red .key { color: #FFF6E6; text-shadow: 0 6px 0 rgba(0,0,0,.22); }
+  .on-red .note { color: rgba(255,240,215,.9); }
+  .on-page .lead { color: var(--ink); } .on-page .key { color: var(--sepia); } .on-page .note { color: #6E5A3F; }
+
+  /* The phone: tilted, bleeding off the bottom, its screen an app screenshot. */
+  .phone { position: absolute; width: 720px; height: 1590px; border-radius: 92px; padding: 20px; z-index: 3;
+           background: linear-gradient(145deg, #3A3A3C, #111 40%, #2B2B2D);
+           box-shadow: 0 0 0 3px #555 inset, 0 40px 80px rgba(0,0,0,.45), 0 12px 24px rgba(0,0,0,.35); }
+  .phone .screen { width: 100%; height: 100%; border-radius: 74px; overflow: hidden; background: var(--page); position: relative; }
+  .phone .screen img { width: 100%; height: auto; display: block; margin-top: -68px; } /* hides the phone's own status bar (~125 of 2800 px) */
+  .phone .screen .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; text-align: center;
+                       font: 700 64px/1.2 Caveat, cursive; color: #8C7A55; background: repeating-linear-gradient(0deg, #EFE4CC 0 58px, #E6D8B8 58px 60px); }
+  .phone .cam { position: absolute; top: 34px; left: 50%; width: 30px; height: 30px; margin-left: -15px; border-radius: 50%; background: #0A0A0A; z-index: 2; box-shadow: 0 0 0 4px #1d1d1f; }
+
+  /* The tape that runs through every panel and ties them into one strip. */
+  #tape { position: absolute; top: 0; left: 0; z-index: 2; pointer-events: none; }
+
+  /* Things that break out of the frame. */
+  .pop { position: absolute; z-index: 6; filter: drop-shadow(0 26px 30px rgba(0,0,0,.45)); }
+  .envelope { width: 520px; height: 340px; background: linear-gradient(160deg, #F7EEDC, #E9DBBE); border-radius: 10px; }
+  .envelope::before { content: ''; position: absolute; left: 0; right: 0; top: 0; height: 210px;
+                      background: linear-gradient(170deg, #EFE2C6, #DCCAA4); clip-path: polygon(0 0, 100% 0, 50% 100%); }
+  .envelope .addr { position: absolute; left: 44px; bottom: 34px; font: 700 44px/1.15 Caveat, cursive; color: #23304A; }
+  .seal { position: absolute; width: 150px; height: 150px; border-radius: 47% 53% 50% 50% / 52% 48% 52% 48%;
+          background: radial-gradient(circle at 38% 34%, #C2463A, #8E2A20 55%, #5E1A13);
+          box-shadow: inset 0 -8px 14px rgba(0,0,0,.35), inset 0 6px 10px rgba(255,255,255,.18);
+          display: flex; align-items: center; justify-content: center; font: 700 82px/1 Cormorant, serif; color: #E9A99E; text-shadow: 0 -2px 0 rgba(0,0,0,.35); }
+  .seal.face { font-size: 0; background: url('raw/portrait.png') center 30% / 125% auto no-repeat;
+               border: 14px solid #8E2A20; border-radius: 50%;
+               box-shadow: 0 0 0 4px #5E1A13, inset 0 0 0 3px rgba(0,0,0,.25), 0 8px 14px rgba(0,0,0,.35); }
+  .film { width: 420px; transform-origin: center; }
+  .film img { width: 100%; display: block; border-radius: 10px; }
+  .stamp-year { position: absolute; right: 36px; top: 30px; width: 120px; height: 140px; background: #FBF4E4; border: 3px dashed #C9A45C;
+                display: flex; align-items: center; justify-content: center; font: italic 700 46px/1 Cormorant, serif; color: var(--oxblood); transform: rotate(6deg); }
+  .cassette { width: 760px; }
+  .reply { width: 600px; padding: 40px 44px; background: #FBF4E4; border-radius: 6px; transform: rotate(-4deg);
+           font: 700 50px/1.25 Caveat, cursive; color: var(--sepia);
+           background-image: repeating-linear-gradient(0deg, transparent 0 61px, rgba(107,42,34,.18) 61px 63px); }
+  .reply small { display: block; font: 600 34px/1 Cormorant, serif; color: #8C7A55; margin-bottom: 12px; font-style: italic; }
+  .book { position: absolute; width: 120px; border-radius: 10px 10px 6px 6px; box-shadow: inset -10px 0 14px rgba(0,0,0,.3), 0 18px 24px rgba(0,0,0,.4); }
+  .book span { position: absolute; left: 50%; top: 50%; transform: translate(-50%,-50%) rotate(-90deg); white-space: nowrap;
+               font: italic 700 46px/1 Cormorant, serif; color: var(--gilt); }
+  .polaroid { width: 420px; padding: 26px 26px 0; background: linear-gradient(160deg, #FBF4E4, #EADDBF); border-radius: 6px; }
+  .polaroid .pic { height: 330px; position: relative; overflow: hidden;
+                   background: linear-gradient(180deg, #F5B06B 0%, #E9876A 55%, #7A4E6E 56%, #4E3654 100%); }
+  .polaroid .pic i { position: absolute; left: 50%; top: 90px; width: 110px; height: 110px; margin-left: -55px; border-radius: 50%; background: #FFF3D6; }
+  .polaroid .cap { font: 700 50px/1 Caveat, cursive; color: #23304A; padding: 26px 4px 34px; }
+  .chips { display: flex; gap: 16px; flex-wrap: wrap; margin-top: 30px; }
+  .chips span { font: 700 46px/1 Caveat, cursive; color: #FFF3DE; border: 3px solid rgba(255,243,222,.75); border-radius: 999px; padding: 12px 28px 16px; }
+</style>
+</head>
+<body>
+<div id="pano">
+
+  <!-- 1 · loud: the hero, a letter from last year -->
+  <section class="panel oxblood on-red" style="left:0">
+    <div class="head">
+      <div class="lead">A letter from</div>
+      <span class="key">last year</span>
+      <div class="note">the same day, one year ago ✉</div>
+    </div>
+  </section>
+
+  <!-- 2 · paper: write back -->
+  <section class="panel page on-page" style="left:1080px">
+    <div class="head">
+      <div class="lead">Then write</div>
+      <span class="key">back</span>
+      <div class="note">answer your past self, in sepia ink</div>
+    </div>
+  </section>
+
+  <!-- 3 · dark: voice on tape -->
+  <section class="panel night on-dark" style="left:2160px">
+    <div class="head">
+      <div class="lead">Your voice,</div>
+      <span class="key">on tape</span>
+      <div class="note">up to a minute, played on a little recorder</div>
+    </div>
+  </section>
+
+  <!-- 4 · leather: a diary for every year -->
+  <section class="panel leather on-dark" style="left:3240px">
+    <div class="head">
+      <div class="lead">A diary for</div>
+      <span class="key">every year</span>
+      <div class="note">each one its own book on the shelf</div>
+    </div>
+  </section>
+
+  <!-- 5 · paper: give a page -->
+  <section class="panel page on-page" style="left:4320px">
+    <div class="head">
+      <div class="lead">Meet yourself</div>
+      <span class="key">again</span>
+      <div class="note">open a year, and every page is there</div>
+    </div>
+  </section>
+
+  <!-- 6 · dark: draw your portrait -->
+  <section class="panel night on-dark" style="left:5400px">
+    <div class="head">
+      <div class="lead">Draw your</div>
+      <span class="key">portrait</span>
+      <div class="note">skin, hair, glasses, film stock · all yours</div>
+    </div>
+  </section>
+
+  <!-- 7 · paper: give a page -->
+  <section class="panel page on-page" style="left:6480px">
+    <div class="head">
+      <div class="lead">Give a page to</div>
+      <span class="key">someone</span>
+      <div class="note">phone to phone, encrypted, never on a server</div>
+    </div>
+  </section>
+
+  <!-- 8 · loud: private by design -->
+  <section class="panel oxblood on-red" style="left:7560px">
+    <div class="head">
+      <div class="lead">Yours, and</div>
+      <span class="key">only yours</span>
+      <div class="chips"><span>no ads</span><span>no tracking</span><span>your own Drive</span></div>
+    </div>
+  </section>
+
+  <!-- The tape, one strand across all eight panels (drawn for 6480 px, stretched to 8640). -->
+  <svg id="tape" width="8640" height="1920" viewBox="0 0 6480 1920" preserveAspectRatio="none">
+    <defs>
+      <linearGradient id="tg" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0" stop-color="#6A4429"/><stop offset=".45" stop-color="#3B2414"/><stop offset="1" stop-color="#1E120A"/>
+      </linearGradient>
+    </defs>
+    <path d="M -40 1180 C 300 1000, 520 1500, 900 1420 S 1500 980, 1800 1120 S 2300 1650, 2700 1520 S 3300 900, 3700 1060 S 4300 1600, 4700 1500 S 5300 1000, 5700 1180 S 6300 1450, 6560 1300"
+          fill="none" stroke="url(#tg)" stroke-width="30" stroke-linecap="round" opacity=".92" vector-effect="non-scaling-stroke"/>
+    <path d="M -40 1172 C 300 992, 520 1492, 900 1412 S 1500 972, 1800 1112 S 2300 1642, 2700 1512 S 3300 892, 3700 1052 S 4300 1592, 4700 1492 S 5300 992, 5700 1172 S 6300 1442, 6560 1292"
+          fill="none" stroke="rgba(255,220,180,.22)" stroke-width="5" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+  </svg>
+
+  <!-- Phones (screen n = raw/n.png). Some lean across a seam so the strip reads as one. -->
+  <div class="phone" style="left:250px;  top:640px;  transform:rotate(-7deg)"><div class="screen"><span class="cam"></span><img src="raw/1.png" data-n="1"></div></div>
+  <div class="phone" style="left:1440px; top:700px;  transform:rotate(6deg)"><div class="screen"><span class="cam"></span><img src="raw/2.png" data-n="2"></div></div>
+  <div class="phone" style="left:2420px; top:760px;  transform:rotate(-5deg)"><div class="screen"><span class="cam"></span><img src="raw/3.png" data-n="3"></div></div>
+  <div class="phone" style="left:3560px; top:700px;  transform:rotate(7deg)"><div class="screen"><span class="cam"></span><img src="raw/4.png" data-n="4"></div></div>
+  <div class="phone" style="left:4560px; top:720px;  transform:rotate(-6deg)"><div class="screen"><span class="cam"></span><img src="raw/5.png" data-n="5"></div></div>
+  <div class="phone" style="left:5640px; top:760px;  transform:rotate(5deg)"><div class="screen"><span class="cam"></span><img src="raw/6.png" data-n="6"></div></div>
+  <div class="phone" style="left:6700px; top:720px;  transform:rotate(-6deg)"><div class="screen"><span class="cam"></span><img src="raw/7.png" data-n="7"></div></div>
+  <div class="phone" style="left:7900px; top:760px;  transform:rotate(5deg)"><div class="screen"><span class="cam"></span><img src="raw/8.png" data-n="8"></div></div>
+
+  <!-- 1: the sealed letter pops out of the frame, across the seam into panel 2 -->
+  <div class="pop envelope" style="left:500px; top:1470px; transform:rotate(8deg)">
+    <div class="stamp-year">2025</div>
+    <div class="addr">to: me, today<br>from: past me</div>
+    <div class="seal face" style="left:320px; top:140px; width:170px; height:170px"></div>
+  </div>
+
+  <!-- 2: your reply, in sepia -->
+  <div class="pop reply" style="left:1300px; top:1600px">
+    <small>a year later, you wrote back:</small>
+    still the best day of that summer. let’s do it again in June ♡
+  </div>
+
+  <!-- 3: the cassette, bigger than the phone -->
+  <img class="pop cassette" src="../../../assets/android-icon-foreground.png" style="left:2780px; top:1330px; width:1000px; transform:rotate(-14deg)">
+
+  <!-- 4: diaries standing out past the phone -->
+  <div class="pop" style="left:3780px; top:1470px; width:420px; height:420px">
+    <div class="book" style="left:0;   top:60px;  height:360px; background:linear-gradient(90deg,#2E6B57,#1F4A3C)"><span>2023</span></div>
+    <div class="book" style="left:130px;top:20px;  height:400px; background:linear-gradient(90deg,#A0463A,#7A2F25)"><span>2024</span></div>
+    <div class="book" style="left:260px;top:80px;  height:340px; background:linear-gradient(90deg,#B08A3E,#866529)"><span>2025</span></div>
+  </div>
+
+  <!-- 5: a loose polaroid sliding out of the volume -->
+  <div class="pop polaroid" style="left:4300px; top:1380px; transform:rotate(-11deg)">
+    <div class="pic"><i></i></div>
+    <div class="cap">the bookshop day ♡</div>
+  </div>
+
+  <!-- 6: your portrait, on its frame of film -->
+  <div class="pop film" style="left:5330px; top:1380px; transform:rotate(-9deg)"><img src="raw/portrait-frame.png"></div>
+
+  <!-- 7: a sealed page flying across to panel 8 -->
+  <div class="pop envelope" style="left:7180px; top:1420px; width:460px; height:300px; transform:rotate(-10deg)">
+    <div class="addr" style="font-size:42px">for: Mum ♡</div>
+    <div class="seal face" style="left:290px; top:120px; width:140px; height:140px"></div>
+  </div>
+
+  <!-- 8: a big wax seal with your portrait -->
+  <div class="pop seal face" style="left:7620px; top:1520px; width:280px; height:280px; transform:rotate(-8deg); border-width:22px"></div>
+</div>
+
+<script>
+  const p = Number(new URLSearchParams(location.search).get('p') || 0);
+  // ?p=0 shows the whole strip scaled to fit (for a preview); ?p=1…8 shows one 1080×1920 panel.
+  const pano = document.getElementById('pano');
+  if (p > 0) pano.style.left = (-(p - 1) * 1080) + 'px';
+  else { document.documentElement.style.cssText = 'width:8640px;height:1920px'; document.body.style.cssText = 'width:8640px;height:1920px'; }
+  for (const img of document.querySelectorAll('img[data-n]')) {
+    img.onerror = () => { const d = document.createElement('div'); d.className = 'ph'; d.textContent = 'app screen ' + img.dataset.n; img.replaceWith(d); };
+  }
+</script>
+</body>
+</html>

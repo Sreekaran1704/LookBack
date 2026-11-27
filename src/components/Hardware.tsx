@@ -119,7 +119,7 @@ export function HardwareButton({ label, icon, onPress, tone = 'plain', disabled 
       {wash ? <WashIn color={wash} marker /> : null}
       <View style={styles.place}>
         {icon ? <Ionicons name={icon} size={18} color={ink} /> : null}
-        <Text numberOfLines={1} style={[typography.small, { flexShrink: 1, color: ink, fontSize: 15, lineHeight: 19, fontWeight: '700', paddingRight: 0 }]}>
+        <Text numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.75} style={[typography.small, { flexShrink: 1, color: ink, fontSize: 15, lineHeight: 19, fontWeight: '700', paddingRight: 0 }]}>
           {label}
         </Text>
       </View>

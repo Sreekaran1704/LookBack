@@ -24,6 +24,7 @@ const FLIGHT: Record<GiftState, FlightState> = {
   connecting: 'connecting',
   sending: 'moving',
   sent: 'done',
+  mailed: 'sealed',
   declined: 'declined',
   failed: 'failed',
 };
@@ -100,7 +101,7 @@ export default function GiveScreen() {
         {!account ? null : !me ? (
           <Panel>
             <Text style={[typography.print, { color: colors.ink }]}>Connect your Google account on the You page first.</Text>
-            <Text style={[typography.caption, { color: colors.inkMuted }]}>It only lets your phones find each other. The page goes straight from your phone to theirs, never online.</Text>
+            <Text style={[typography.caption, { color: colors.inkMuted }]}>It only lets your phones find each other. The page goes straight from your phone to theirs; if their phone is off, it waits sealed so only their phone can open it.</Text>
           </Panel>
         ) : (
           <View style={{ gap: spacing.sm }}>
@@ -149,7 +150,7 @@ export default function GiveScreen() {
           problem={giftProblem}
           onClose={() => {
             setFlightHidden(true);
-            if (giftState === 'sent' || giftState === 'declined') setGift(null);
+            if (giftState === 'sent' || giftState === 'mailed' || giftState === 'declined') setGift(null);
           }}
         />
       ) : null}

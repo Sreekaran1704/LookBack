@@ -8,13 +8,15 @@ import type { RealtimeChannel } from '@supabase/supabase-js';
 import { formatDisplayDate } from '../../lib/dates';
 import { GIFT_CHUNK, GiftAssembler, hasCandidate, trustKnock, withCandidates, parseHeader, parseSignal, type GiftHeader, type Knock, type SdpNote, type Signal } from '../../lib/giftProtocol';
 import { verifyHandshake } from '../../lib/identity';
+import { packPage, parseMailPath, readEnvelope, unpackPage } from '../../lib/mailbox';
 import { PAGES_CHANNEL_ID } from '../../notifications/scheduler';
 import { entriesRepository } from '../entriesRepository';
 import { settingsRepository } from '../settingsRepository';
 import { sharingRepository, type OutboxItem } from '../sharingRepository';
 import { socialClient } from './client';
 import { alertPerson, registerForAlerts } from './alerts';
-import { myPublicKey, signMine } from './keys';
+import { myPublicKey, openForMe, sealForThem, signMine } from './keys';
+import { envelopesFor, fetchEnvelope, leaveEnvelope, readAll, removeEnvelope } from './mailbox';
 import { myAccountId, rpc } from './repository';
 
 /**
@@ -25,11 +27,40 @@ import { myAccountId, rpc } from './repository';
  */
 
 /**
- * Public STUN servers: they only tell a phone its own internet address, so phones on different networks can reach each
- * other directly (on the same Wi-Fi they connect locally). No relay: a few mobile networks block direct connections,
- * and then the page waits until you're on the same Wi-Fi. The page never passes through any server.
+ * How the two phones find a way to each other, like Blip: on the same Wi-Fi they connect locally; on different networks
+ * public STUN servers tell each phone its own internet address so they can connect directly; and where a network
+ * blocks that (common on mobile data, and across countries) a TURN relay passes the connection along. The relay only
+ * ever carries the encrypted stream (DTLS, its fingerprint inside the descriptions each phone signs), so it can't read
+ * or change a page, and it keeps nothing. The relay's short-lived login comes from the `turn` function (Cloudflare),
+ * fetched once and reused until it is close to expiring; without it, phones still connect where networks allow.
  */
-const ICE_SERVERS = [{ urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] }];
+const STUN = { urls: ['stun:stun.l.google.com:19302', 'stun:stun1.l.google.com:19302'] };
+type IceServer = { urls: string | string[]; username?: string; credential?: string };
+let iceServers: IceServer[] = [STUN];
+let relayUntil = 0;
+let relayLoading: Promise<void> | null = null;
+/** Ask for the relay's login again this long before it expires. */
+const RELAY_REFRESH_MS = 60 * 60 * 1000;
+/** Don't hold a page up for the relay's login longer than this. */
+const RELAY_WAIT_MS = 2500;
+
+/** Makes sure the relay's login is fresh (fetched at most every few hours; never throws, never waits long). */
+function ensureRelay(): Promise<void> {
+  if (Date.now() < relayUntil - RELAY_REFRESH_MS || !socialClient) return Promise.resolve();
+  relayLoading ??= (async () => {
+    try {
+      const { data, error } = await socialClient.functions.invoke<{ iceServers?: IceServer[]; ttl?: number }>('turn', { body: {} });
+      if (error || !data?.iceServers?.length) return;
+      iceServers = [STUN, ...data.iceServers];
+      relayUntil = Date.now() + (data.ttl ?? 86400) * 1000;
+    } catch {
+      // No relay this time: direct connections still work where the networks allow.
+    } finally {
+      relayLoading = null;
+    }
+  })();
+  return Promise.race([relayLoading, new Promise<void>((resolve) => setTimeout(resolve, RELAY_WAIT_MS))]);
+}
 /** Local addresses come at once, the internet address within a second or two; this caps a slow network. */
 const GATHER_MS = 2500;
 /** No progress for this long and the gift is given up (and retried). */
@@ -44,7 +75,8 @@ const RETRY_MS = [5000, 15_000, 60_000];
 /** A knock nobody answered is forgotten after this long on the receiver's screen. */
 const KNOCK_TTL_MS = 10 * 60_000;
 
-export type GiftState = 'knocking' | 'connecting' | 'sending' | 'sent' | 'declined' | 'failed';
+/** `mailed`: their phone couldn't be reached, so it waits for them sealed in the mailbox (lib/mailbox.ts). */
+export type GiftState = 'knocking' | 'connecting' | 'sending' | 'sent' | 'mailed' | 'declined' | 'failed';
 /**
  * Why a gift is stuck: this phone has no network at all (`offline`), the two phones couldn't reach each other
  * (`unreachable`: a network that blocks direct connections), the other phone isn't the one you added (`changed`:
@@ -99,7 +131,7 @@ export function incomingGifts(): IncomingGift[] {
 }
 function setOutgoing(gift: string, personId: string, state: GiftState, problem: GiftProblem | null = null) {
   outgoing.set(gift, { state, personId, problem });
-  if (state === 'sent' || state === 'declined') {
+  if (state === 'sent' || state === 'declined' || state === 'mailed') {
     attempts.delete(gift);
     clearTimeout(retryTimers.get(gift));
     retryTimers.delete(gift);
@@ -198,7 +230,8 @@ async function openInbox(): Promise<void> {
     .on('broadcast', { event: 'signal' }, ({ payload }) => void hear(payload))
     .subscribe((status) => {
       if (status !== 'SUBSCRIBED') return;
-      void sayHello();
+      // Pick up anything sealed for you first, then say hello (so your people hear "had" for what you just kept).
+      void collectMail().finally(() => void sayHello());
       // Where alerts can reach this phone while LookBack is closed.
       void registerForAlerts().catch(() => undefined);
     });
@@ -227,6 +260,8 @@ export async function deliverWaiting(personId?: string, giftId?: string): Promis
     if (giftId && item.id !== giftId) continue;
     const state = outgoing.get(item.id)?.state;
     if (state === 'connecting' || state === 'sending') continue;
+    // Sealed in their mailbox already: only knock when they say hello (to hear "had" once they've picked it up).
+    if (state === 'mailed' && !personId) continue;
     await knock(item).catch(() => {
       setOutgoing(item.id, item.personId, 'knocking');
       scheduleRetry(item.id);
@@ -267,6 +302,8 @@ async function knock(item: OutboxItem) {
     if (outgoing.get(item.id)?.state !== 'knocking') return;
     // No answer: try again shortly, and (once per gift) send an alert, like Blip's: their LookBack is probably closed.
     scheduleRetry(item.id);
+    // Their phone is off, asleep or far away: leave the page sealed in their mailbox, so it doesn't wait for you both.
+    void mailGift(item);
     if (alerted.has(item.id)) return;
     alerted.add(item.id);
     void alertPerson(item.personId, name || 'Someone').catch(() => undefined);
@@ -277,6 +314,12 @@ async function knock(item: OutboxItem) {
 export async function acceptGift(gift: string): Promise<void> {
   const g = incoming.get(gift);
   if (!g || g.state !== 'waiting' || g.changed) return;
+  // It came sealed in your mailbox: it's already here, just keep it.
+  const mail = mailWaiting.get(gift);
+  if (mail) {
+    await keepFromMail(gift, mail);
+    return;
+  }
   setIncoming(gift, { state: 'receiving', progress: 0, problem: null });
   await warmUp();
   sessions.get(gift)?.close();
@@ -291,6 +334,11 @@ export async function declineGift(gift: string): Promise<void> {
   incoming.delete(gift);
   incomingKeys.delete(gift);
   changed();
+  const mail = mailWaiting.get(gift);
+  if (mail) {
+    mailWaiting.delete(gift);
+    await removeEnvelope(mail.path).catch(() => undefined);
+  }
   if (g) await post(g.from, { t: 'no', gift }).catch(() => undefined);
 }
 /** Forget a finished or failed gift on the receiving side. */
@@ -336,6 +384,9 @@ async function handle(note: Signal) {
     case 'here':
       await deliverWaiting(note.from);
       return;
+    case 'mail':
+      await collectMail();
+      return;
     case 'knock': {
       const known = incoming.get(note.gift);
       if (known && known.state !== 'failed') return;
@@ -365,6 +416,7 @@ async function handle(note: Signal) {
       if (!item || sessions.has(note.gift)) return;
       const person = await sharingRepository.person(note.from);
       await warmUp();
+      await ensureRelay();
       const session = new Session(note.gift, note.from, 'giver', person?.publicKey ?? null, item);
       sessions.set(note.gift, session);
       void session.offer();
@@ -394,7 +446,8 @@ async function handle(note: Signal) {
 let warm: Promise<void> | null = null;
 function warmUp(): Promise<void> {
   warm ??= (async () => {
-    const pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+    await ensureRelay();
+    const pc = new RTCPeerConnection({ iceServers });
     try {
       pc.createDataChannel('warm');
       const found = new Promise<void>((resolve) => {
@@ -427,7 +480,7 @@ function gathered(pc: RTCPeerConnection, ms: number): Promise<void> {
 
 /** One gift on its way, either direction: the direct connection and what goes over it. */
 class Session {
-  private readonly pc = new RTCPeerConnection({ iceServers: ICE_SERVERS });
+  private readonly pc = new RTCPeerConnection({ iceServers });
   private channel: ReturnType<RTCPeerConnection['createDataChannel']> | null = null;
   private header: GiftHeader | null = null;
   private assembler: GiftAssembler | null = null;
@@ -563,29 +616,9 @@ class Session {
     try {
       setOutgoing(this.gift, this.peer, 'sending');
       this.alive();
-      const entry = (await entriesRepository.getAll()).find((e) => e.id === item.entryId);
-      if (!entry) throw new Error('gone');
-      const { name, portrait } = await settingsRepository.getProfile();
-      const files: { kind: 'photo' | 'voice'; file: File }[] = [];
-      if (entry.photoPath) files.push({ kind: 'photo', file: new File(Paths.document, entry.photoPath) });
-      if (entry.voicePath) files.push({ kind: 'voice', file: new File(Paths.document, entry.voicePath) });
-      const ext = (f: File) => f.name.split('.').pop()?.toLowerCase() ?? '';
-      const describe = (kind: 'photo' | 'voice') => {
-        const f = files.find((x) => x.kind === kind)?.file;
-        return f && f.exists ? { ext: ext(f), size: f.size } : null;
-      };
-      const header: GiftHeader = {
-        t: 'header',
-        gift: this.gift,
-        name: name || 'Someone',
-        date: entry.localDate,
-        body: entry.text,
-        voiceTitle: entry.voiceTitle ?? null,
-        voiceMs: entry.voiceMs,
-        photo: describe('photo'),
-        voice: describe('voice'),
-        portrait,
-      };
+      const built = await pageFor(item);
+      if (!built) throw new Error('gone');
+      const { header, files } = built;
       channel.send(JSON.stringify(header));
       const total = (header.photo?.size ?? 0) + (header.voice?.size ?? 0);
       let sent = 0;
@@ -638,25 +671,7 @@ class Session {
       }
       if (message.t !== 'end' || !this.header || !this.assembler?.complete) throw new Error('out of order');
       const h = this.header;
-      const write = (kind: 'photo' | 'voice') => {
-        const meta = h[kind];
-        const bytes = this.assembler?.file(kind);
-        if (!meta || !bytes) return null;
-        const { file, path } = sharingRepository.letterFile(this.gift, `${kind}.${meta.ext}`);
-        file.write(bytes);
-        return path;
-      };
-      const photoPath = write('photo');
-      const voicePath = write('voice');
-      const known = await sharingRepository.person(this.peer);
-      const senderName = known?.name ?? h.name;
-      const older = (await sharingRepository.letters()).filter((l) => l.senderId === this.peer && l.memoryDate === h.date && l.id !== this.gift);
-      await sharingRepository.keepLetter({ id: this.gift, senderId: this.peer, senderName, senderPortrait: h.portrait, memoryDate: h.date, body: h.body, voiceTitle: h.voiceTitle, voiceMs: h.voiceMs, photoPath, voicePath });
-      // The page they gave again replaces the copy you had of that day (only after the new one is safely kept).
-      for (const old of older) await sharingRepository.removeLetter(old.id).catch(() => undefined);
-      // They're one of your people now, with the phone key their page was signed with.
-      await sharingRepository.addPerson(this.peer, senderName, this.theirKey);
-      if (h.portrait) await sharingRepository.setPortrait(this.peer, h.portrait);
+      const senderName = await keepPage(this.gift, this.peer, h, this.assembler.file('photo'), this.assembler.file('voice'), this.theirKey);
       this.channel?.send('{"t":"kept"}');
       this.finish();
       setIncoming(this.gift, { state: 'kept', progress: 1 });
@@ -690,6 +705,8 @@ class Session {
       setOutgoing(this.gift, this.peer, 'failed', problem);
       // A phone that changed won't sign the right way next time either: that needs a fresh scan, not a retry.
       if (problem !== 'changed') scheduleRetry(this.gift);
+      // The networks wouldn't let the two phones meet: leave it sealed in their mailbox instead.
+      if (problem === 'unreachable' && this.item) void mailGift(this.item);
     } else {
       sharingRepository.discardPartial(this.gift);
       setIncoming(this.gift, { state: 'failed', problem });
@@ -706,6 +723,191 @@ class Session {
       // Already closed.
     }
     if (sessions.get(this.gift) === this) sessions.delete(this.gift);
+  }
+}
+
+/** What a page is made of, ready to send: its header and its files (photo, then voice). Null if the page is gone. */
+async function pageFor(item: OutboxItem): Promise<{ header: GiftHeader; files: { kind: 'photo' | 'voice'; file: File }[] } | null> {
+  const entry = (await entriesRepository.getAll()).find((e) => e.id === item.entryId);
+  if (!entry) return null;
+  const { name, portrait } = await settingsRepository.getProfile();
+  const files: { kind: 'photo' | 'voice'; file: File }[] = [];
+  if (entry.photoPath) files.push({ kind: 'photo', file: new File(Paths.document, entry.photoPath) });
+  if (entry.voicePath) files.push({ kind: 'voice', file: new File(Paths.document, entry.voicePath) });
+  const ext = (f: File) => f.name.split('.').pop()?.toLowerCase() ?? '';
+  const describe = (kind: 'photo' | 'voice') => {
+    const f = files.find((x) => x.kind === kind)?.file;
+    return f && f.exists ? { ext: ext(f), size: f.size } : null;
+  };
+  const header: GiftHeader = {
+    t: 'header',
+    gift: item.id,
+    name: name || 'Someone',
+    date: entry.localDate,
+    body: entry.text,
+    voiceTitle: entry.voiceTitle ?? null,
+    voiceMs: entry.voiceMs,
+    photo: describe('photo'),
+    voice: describe('voice'),
+    portrait,
+  };
+  return { header, files: files.filter((f) => header[f.kind]) };
+}
+
+/**
+ * Keeps a page that arrived (over the direct channel or from the mailbox): its files, the letter, and the giver as one
+ * of your people with the phone key it was signed with. A page they gave again for the same day replaces the older
+ * copy. Returns the name it's kept under.
+ */
+async function keepPage(gift: string, peer: string, h: GiftHeader, photo: Uint8Array | null, voice: Uint8Array | null, theirKey: string | null): Promise<string> {
+  const write = (kind: 'photo' | 'voice', bytes: Uint8Array | null) => {
+    const meta = h[kind];
+    if (!meta || !bytes) return null;
+    const { file, path } = sharingRepository.letterFile(gift, `${kind}.${meta.ext}`);
+    file.write(bytes);
+    return path;
+  };
+  const photoPath = write('photo', photo);
+  const voicePath = write('voice', voice);
+  const known = await sharingRepository.person(peer);
+  const senderName = known?.name ?? h.name;
+  const older = (await sharingRepository.letters()).filter((l) => l.senderId === peer && l.memoryDate === h.date && l.id !== gift);
+  await sharingRepository.keepLetter({ id: gift, senderId: peer, senderName, senderPortrait: h.portrait, memoryDate: h.date, body: h.body, voiceTitle: h.voiceTitle, voiceMs: h.voiceMs, photoPath, voicePath });
+  // The page they gave again replaces the copy you had of that day (only after the new one is safely kept).
+  for (const old of older) await sharingRepository.removeLetter(old.id).catch(() => undefined);
+  // They're one of your people now, with the phone key their page was signed with.
+  await sharingRepository.addPerson(peer, senderName, theirKey);
+  if (h.portrait) await sharingRepository.setPortrait(peer, h.portrait);
+  return senderName;
+}
+
+/** Gifts being sealed into a mailbox right now (one at a time each). */
+const mailing = new Set<string>();
+
+/**
+ * The sealed mailbox (lib/mailbox.ts), for when the two phones can't meet: the page is sealed for their phone (only it
+ * can open it), signed with yours, and left in their box on the server. Needs their phone key (learned from their
+ * code or their first page). It stays in your outbox until they say they have it.
+ */
+async function mailGift(item: OutboxItem): Promise<boolean> {
+  if (!me || mailing.has(item.id) || gone.has(item.personId)) return false;
+  const state = outgoing.get(item.id)?.state;
+  if (state === 'sent' || state === 'declined' || state === 'connecting' || state === 'sending' || state === 'mailed') return false;
+  const person = await sharingRepository.person(item.personId);
+  if (!person?.publicKey) return false;
+  mailing.add(item.id);
+  try {
+    const built = await pageFor(item);
+    if (!built) return false;
+    const photo = built.files.find((f) => f.kind === 'photo');
+    const voice = built.files.find((f) => f.kind === 'voice');
+    const page = packPage(built.header, photo ? await readAll(photo.file) : null, voice ? await readAll(voice.file) : null);
+    const envelope = await sealForThem({ gift: item.id, from: me, to: item.personId, recipientKey: person.publicKey, page });
+    // They may have answered while it was being sealed: then it's going directly, and the envelope isn't needed.
+    const now = outgoing.get(item.id)?.state;
+    if (now === 'connecting' || now === 'sending' || now === 'sent') return false;
+    await leaveEnvelope(item.personId, me, item.id, envelope);
+    setOutgoing(item.id, item.personId, 'mailed');
+    await post(item.personId, { t: 'mail', gift: item.id }).catch(() => undefined);
+    return true;
+  } catch {
+    return false;
+  } finally {
+    mailing.delete(item.id);
+  }
+}
+
+interface MailPage {
+  path: string;
+  from: string;
+  key: string;
+  header: GiftHeader;
+  photo: Uint8Array | null;
+  voice: Uint8Array | null;
+}
+/** Envelopes opened but waiting for your yes (from someone whose pages don't come in by themselves). */
+const mailWaiting = new Map<string, MailPage>();
+
+/** Picks up everything sealed for this phone (one pickup at a time). */
+let collecting: Promise<void> | null = null;
+export function collectMail(): Promise<void> {
+  collecting ??= (async () => {
+    if (!me) return;
+    const paths = await envelopesFor(me).catch(() => [] as string[]);
+    for (const path of paths) await takeEnvelope(path).catch(() => undefined);
+  })().finally(() => {
+    collecting = null;
+  });
+  return collecting;
+}
+
+/** One envelope: checked, opened, and kept (or asked about, the way a knock is). */
+async function takeEnvelope(path: string) {
+  const at = parseMailPath(path);
+  if (!me || !at || at.to !== me.toLowerCase()) return;
+  const waiting = mailWaiting.get(at.gift);
+  if (waiting) {
+    // Still waiting for your yes: keep the question on screen.
+    const g = incoming.get(at.gift);
+    if (g && g.state === 'waiting') setIncoming(at.gift, { at: Date.now() });
+    return;
+  }
+  // Already kept (it came across directly too): the envelope isn't needed.
+  if ((await sharingRepository.letters()).some((l) => l.id === at.gift)) {
+    await removeEnvelope(path).catch(() => undefined);
+    await post(at.from, { t: 'had', gift: at.gift }).catch(() => undefined);
+    return;
+  }
+  const env = readEnvelope(await fetchEnvelope(path));
+  if (!env || env.head.from !== at.from || env.head.gift !== at.gift) {
+    await removeEnvelope(path).catch(() => undefined);
+    return;
+  }
+  const friend = await sharingRepository.person(at.from);
+  const trust = trustKnock(friend?.publicKey, env.head.key, await settingsRepository.getAutoAccept());
+  // Not from the phone you know for them: left unopened until you scan their code again.
+  if (trust.changed) return;
+  const bytes = await openForMe({ head: env.head, sealed: env.sealed, me, senderKey: trust.expectedKey ?? env.head.key });
+  const page = bytes ? unpackPage(bytes, at.gift) : null;
+  if (!page) {
+    await removeEnvelope(path).catch(() => undefined);
+    return;
+  }
+  const mail: MailPage = { path, from: at.from, key: env.head.key, header: page.header, photo: page.photo, voice: page.voice };
+  incomingKeys.set(at.gift, trust.expectedKey);
+  incoming.set(at.gift, {
+    t: 'knock',
+    gift: at.gift,
+    from: at.from,
+    name: friend?.name ?? page.header.name,
+    date: page.header.date,
+    photo: !!page.photo,
+    voice: !!page.voice,
+    key: env.head.key,
+    at: Date.now(),
+    state: 'waiting',
+    progress: 0,
+    changed: false,
+    problem: null,
+  });
+  if (trust.auto) await keepFromMail(at.gift, mail);
+  else {
+    mailWaiting.set(at.gift, mail);
+    changed();
+  }
+}
+
+async function keepFromMail(gift: string, mail: MailPage) {
+  mailWaiting.delete(gift);
+  try {
+    const senderName = await keepPage(gift, mail.from, mail.header, mail.photo, mail.voice, mail.key);
+    setIncoming(gift, { state: 'kept', progress: 1 });
+    await removeEnvelope(mail.path).catch(() => undefined);
+    void post(mail.from, { t: 'had', gift }).catch(() => undefined);
+    void tellKept(gift, senderName, mail.header.date);
+  } catch {
+    sharingRepository.discardPartial(gift);
+    setIncoming(gift, { state: 'failed', problem: null });
   }
 }
 
@@ -726,7 +928,11 @@ function retryAll() {
 
 // Back in front: reopen the inbox (the socket may have dropped) and offer what's waiting.
 AppState.addEventListener('change', (state) => {
-  if (state === 'active') void startPostman().then(retryAll).catch(() => undefined);
+  if (state === 'active')
+    void startPostman()
+      .then(() => collectMail())
+      .then(retryAll)
+      .catch(() => undefined);
 });
 // Back online, or on another network: what was waiting can go now.
 Network.addNetworkStateListener(({ isConnected }) => {

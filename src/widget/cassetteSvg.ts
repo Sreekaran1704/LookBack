@@ -9,6 +9,7 @@
  * waiting" postmark is struck across the corner.
  */
 import type { IconState } from '../lib/appIcon';
+import { cassetteStyle, type CassetteStyle } from '../theme/cassettes';
 
 export interface CassetteSvgOptions {
   /** Handwritten on the label's first line ("Nov 21 · Saturday"). */
@@ -25,6 +26,8 @@ export interface CassetteSvgOptions {
   /** Font families registered for the widget. */
   hand: string;
   print: string;
+  /** The person's cassette (You → Look); the classic black one if left out. */
+  style?: CassetteStyle;
 }
 
 const W = 100;
@@ -110,42 +113,47 @@ function postmark(letters: number, print: string): string {
 
 /** The whole cassette as an SVG string, drawn edge to edge in its 100 × 63 box. */
 export function cassetteSvg(o: CassetteSvgOptions): string {
+  const c = o.style ?? cassetteStyle('black');
+  const stripe = c.stripes[c.stripes.length > 1 ? 2 : 0] ?? c.accent;
+  const band = c.stripes.length > 1
+    ? c.stripes.map((h, i) => `<rect x="6" y="${(44 + (i * 7) / c.stripes.length).toFixed(2)}" width="88" height="${(7 / c.stripes.length + 0.05).toFixed(2)}" fill="${h}"/>`).join('')
+    : `<rect x="6" y="44" width="88" height="7" rx="0.8" fill="${c.clear ? '#F2F2F2' : '#E9DFC4'}" fill-opacity="${c.clear ? 0.25 : 1}"/><rect x="46" y="44" width="12" height="7" fill="${c.accent}" fill-opacity="0.85"/>`;
+  const bandInk = c.clear ? '#F2F2F2' : c.stripes.length > 1 ? '#FFF6E2' : '#2A2118';
   const played = Math.max(0, Math.min(1, o.played));
   const left = 9 + 8 * (1 - played);
   const right = 9 + 8 * played;
   const shards = o.state === 'Gone';
   return `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}" width="${W * 4}" height="${H * 4}">
   <defs>
-    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2E2E31"/><stop offset="0.3" stop-color="#1C1C1E"/><stop offset="1" stop-color="#121213"/></linearGradient>
-    <radialGradient id="tape"><stop offset="0.4" stop-color="#4A2E1F"/><stop offset="1" stop-color="#2E1C12"/></radialGradient>
+    <linearGradient id="body" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.shell[0]}"/><stop offset="0.3" stop-color="${c.shell[1]}"/><stop offset="1" stop-color="${c.shell[2]}"/></linearGradient>
+    <radialGradient id="tape"><stop offset="0.4" stop-color="${c.tape}"/><stop offset="1" stop-color="#0A0705"/></radialGradient>
     <linearGradient id="glint" x1="0" y1="0" x2="0.6" y2="1"><stop offset="0" stop-color="#fff" stop-opacity="0.3"/><stop offset="0.4" stop-color="#fff" stop-opacity="0.05"/><stop offset="1" stop-color="#000" stop-opacity="0.3"/></linearGradient>
-    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#F8F4EA"/><stop offset="1" stop-color="#E8E0CE"/></linearGradient>
+    <linearGradient id="paper" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="${c.label}"/><stop offset="1" stop-color="${c.label}" stop-opacity="0.9"/></linearGradient>
     <radialGradient id="screw" cx="0.35" cy="0.35"><stop offset="0" stop-color="#C4C4C8"/><stop offset="0.6" stop-color="#8C8C90"/><stop offset="1" stop-color="#55555A"/></radialGradient>
     <clipPath id="shell"><rect x="0" y="0" width="${W}" height="${H}" rx="3"/></clipPath>
     <clipPath id="win"><rect x="14" y="21.5" width="72" height="19.5" rx="2.2"/></clipPath>
   </defs>
   <g ${shards ? 'opacity="0.92"' : ''}>
   <rect x="0" y="0" width="${W}" height="${H}" rx="3" fill="url(#body)"/>
-  <rect x="0.3" y="0.3" width="99.4" height="62.4" rx="2.8" fill="none" stroke="#3A3A3D" stroke-width="0.6"/>
+  <rect x="0.3" y="0.3" width="99.4" height="62.4" rx="2.8" fill="none" stroke="${c.edge}" stroke-width="0.6"/>
   <g clip-path="url(#win)">
-    <rect x="14" y="21.5" width="72" height="19.5" fill="#2A211C"/>
+    <rect x="14" y="21.5" width="72" height="19.5" fill="${c.window}"/>
     ${reel(29, left)}${reel(71, right)}
-    <rect x="14" y="38.6" width="72" height="0.9" fill="#4A2E1F"/>
+    <rect x="14" y="38.6" width="72" height="0.9" fill="${c.tape}"/>
     <rect x="14" y="21.5" width="72" height="19.5" fill="url(#glint)"/>
   </g>
   <rect x="14" y="21.5" width="72" height="19.5" rx="2.2" fill="none" stroke="#55555A" stroke-width="0.6"/>
-  <rect x="6" y="17.6" width="88" height="1.6" fill="#C8372B"/>
+  <rect x="6" y="17.6" width="88" height="1.6" fill="${stripe}"/>
   <rect x="6" y="4" width="88" height="13.6" rx="1.2" fill="url(#paper)"/>
-  <rect x="8" y="5.6" width="6" height="6" fill="#4A2A3A"/>
-  <text x="11" y="10.3" font-family="${o.print}" font-size="5" fill="#F4F1EA" text-anchor="middle">A</text>
-  <text x="16.5" y="10.4" font-family="${o.hand}" font-size="5.6" fill="#23304A">${esc(o.title)}</text>
+  <rect x="8" y="5.6" width="6" height="6" fill="${c.side}"/>
+  <text x="11" y="10.3" font-family="${o.print}" font-size="5" fill="${c.label}" text-anchor="middle">A</text>
+  <text x="16.5" y="10.4" font-family="${o.hand}" font-size="5.6" fill="${c.ink}">${esc(o.title)}</text>
   <rect x="16.5" y="11.4" width="74" height="0.3" fill="#9A9A9A"/>
-  <text x="16.5" y="15.8" font-family="${o.hand}" font-size="4.2" fill="#23304A" fill-opacity="0.85">${esc(o.line)}</text>
-  <rect x="6" y="44" width="88" height="7" rx="0.8" fill="#E9DFC4"/>
-  <rect x="46" y="44" width="12" height="7" fill="#C8372B" fill-opacity="0.85"/>
-  <text x="8" y="49.2" font-family="${o.print}" font-size="3.6" fill="#2A2118" letter-spacing="0.4">LOOKBACK</text>
-  <text x="92" y="49.2" font-family="${o.print}" font-size="3.6" fill="#2A2118" text-anchor="end">${esc(o.detail)}</text>
-  <path d="M20 63 L22 54 L78 54 L80 63 Z" fill="#141416" stroke="#3A3A3D" stroke-width="0.4"/>
+  <text x="16.5" y="15.8" font-family="${o.hand}" font-size="4.2" fill="${c.ink}" fill-opacity="0.85">${esc(o.line)}</text>
+  ${band}
+  <text x="8" y="49.2" font-family="${o.print}" font-size="3.6" fill="${bandInk}" letter-spacing="0.4">LOOKBACK</text>
+  <text x="92" y="49.2" font-family="${o.print}" font-size="3.6" fill="${bandInk}" text-anchor="end">${esc(o.detail)}</text>
+  <path d="M20 63 L22 54 L78 54 L80 63 Z" fill="${c.foot}" stroke="${c.edge}" stroke-width="0.4"/>
   <circle cx="30" cy="58.5" r="1.75" fill="#050505"/><circle cx="43" cy="58.5" r="1.25" fill="#050505"/><circle cx="57" cy="58.5" r="1.25" fill="#050505"/><circle cx="70" cy="58.5" r="1.75" fill="#050505"/>
   ${screw(3.3, 3.3)}${screw(96.7, 3.3)}${screw(3.3, 59.7)}${screw(96.7, 59.7)}${screw(50, 51.3)}
   ${crackLayer(o.state)}

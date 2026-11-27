@@ -86,6 +86,11 @@ export function NearbyPeople({ state, people, onRetry, onPick, actionLabel, busy
               <PersonButton key={p.token} id={p.id} name={p.name} label={actionLabel(p.name)} disabled={busy} onPress={() => onPick(p)} />
             ))}
           </View>
+        ) : compact ? (
+          <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, alignSelf: 'stretch' }}>
+            <Ionicons name="people-outline" size={18} color={colors.gilt} style={{ marginTop: 2 }} />
+            <Text style={[typography.caption, { color: colors.inkMuted, flex: 1 }]}>Looking for people beside you… ask them to open Shared on their phone.</Text>
+          </View>
         ) : (
           <Text style={[typography.caption, { color: colors.inkMuted, textAlign: 'center', alignSelf: 'stretch' }]}>
             Looking for people beside you… ask them to open Shared on their phone.
@@ -104,8 +109,8 @@ export function VisibleNearby({ state, name, onRetry, compact = false }: { state
   if (state === 'unsupported') return null;
   if (compact && state === 'on')
     return (
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm, alignSelf: 'stretch' }}>
-        <Ionicons name="radio-outline" size={18} color={colors.gilt} />
+      <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm, alignSelf: 'stretch' }}>
+        <Ionicons name="radio-outline" size={18} color={colors.gilt} style={{ marginTop: 2 }} />
         <Text style={[typography.caption, { color: colors.inkMuted, flex: 1 }]}>People beside you can find you as {name} while this page is open.</Text>
       </View>
     );

@@ -24,6 +24,20 @@ testers who stay opted in for 14 days in a row** before you can apply for produc
   upload. App signing key SHA-256 is now `05:61:B5:5B…`.
 - App content (step 6 done, 23 Nov): every declaration saved ("You're all caught up"); they go to review with the
   first release from Publishing overview. Content rating Everyone / PEGI 3 + Users Interact; Data safety adds User IDs.
+- Store graphics (23 Nov): cassette icon (`graphics/icon-512.png`), leather feature graphic
+  (`scripts/make-feature-graphic.mjs`) and six panorama phone screenshots (`screens/panorama.html` +
+  `scripts/make-store-screens.mjs`, app screens in `screens/raw/`, from sample memories) are uploaded; listing saved as draft.
+- Closed test (23 Nov): release 1.3.0 (versionCode 4) on Closed testing – Alpha, India + United States, tester
+  email list "Closed Group" (1 person so far; needs 12+ opted in for 14 days). **Sent for review 23 Nov.**
+  Play's quick check flagged implied `android.hardware.wifi` / `screen.portrait` as required; ignored for now,
+  fixed in code (`plugins/withOptionalHardware.js`), ships in the next bundle (versionCode 5).
+- 24 Nov: **12 testers** in the closed test, so the 14 days are running (earliest production application ~8 Dec if
+  all were opted in by 24 Nov). Built `release/LookBack-1.3.1.aab` (versionCode 5, LookBack key `05:61:B5:5B…`,
+  no developer tools) with the optional wifi / portrait hardware fix. Upload it to Closed testing – Alpha.
+- 24 Nov: testers switched from the "Closed Group" email list to the Google Group **lookback-testers@googlegroups.com**
+  (anyone can join: https://groups.google.com/g/lookback-testers), sent for review. Testers join the group, then the
+  opt-in link https://play.google.com/apps/testing/com.yearbook.app. The 12 earlier testers must join the group too.
+  Internal app sharing: "Anyone you shared the link with can download".
 - Privacy policy: **online** (https://sreekaran1704.github.io/LookBack/privacy/ loads, checked 23 Nov).
 - Listing text (`listing.md`) rewritten 23 Nov for the leather-diary look (no bunny). **The images in `graphics/`
   are still the old bunny/paper look from 19 Nov** (icon, feature graphic, screenshots): the app icon is now the

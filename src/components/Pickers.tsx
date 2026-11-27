@@ -9,11 +9,12 @@ import Animated, {
   withTiming,
 } from 'react-native-reanimated';
 import { selectHaptic } from '../lib/haptics';
-import { PAPERS, useTheme, withAlpha, type Paper, type PaperTone } from '../theme';
+import { CASSETTE_STYLES, PAPERS, useTheme, withAlpha, type CassetteStyleId, type Paper, type PaperTone } from '../theme';
 import type { IconName } from './Buttons';
 import { usePageActive } from './PageActive';
 import { holdPager } from './pagerPosition';
 import { PressableScale } from './PressableScale';
+import { Cassette } from './scrapbook/Cassette';
 
 export interface ToggleOption<T extends string> {
   value: T;
@@ -376,3 +377,44 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
 });
+
+
+/**
+ * Six cassettes in two rows of three, each drawn exactly as it will look in the app: the chosen one sits on a soft wash
+ * outlined in gilt, its name underlined. The Look card is a texture (Panel), so they cost nothing while scrolling.
+ */
+export function CassettePicker({ value, onChange }: { value: CassetteStyleId; onChange: (id: CassetteStyleId) => void }) {
+  const { colors, spacing, radii, typography } = useTheme();
+  // Each cassette is drawn live at an exact width (pictures came out sliced at the foot on Android).
+  const [rowW, setRowW] = useState(0);
+  const imgW = rowW > 0 ? Math.floor((rowW / 3 - spacing.xs * 2) * 0.86) : 0;
+  return (
+    <View style={{ flexDirection: 'row', flexWrap: 'wrap', rowGap: spacing.sm }} onLayout={(e) => setRowW(e.nativeEvent.layout.width)}>
+      {CASSETTE_STYLES.map((s) => {
+        const on = s.id === value;
+        return (
+          <View key={s.id} style={{ width: '33.33%', paddingHorizontal: spacing.xs }}>
+            <PressableScale
+              onPress={() => {
+                selectHaptic();
+                onChange(s.id);
+              }}
+              accessibilityRole="radio"
+              accessibilityState={{ selected: on }}
+              accessibilityLabel={`${s.name} cassette: ${s.note}`}
+            >
+              <View style={{ alignItems: 'center', paddingVertical: spacing.xs, borderRadius: radii.card, borderWidth: 1.5, borderColor: on ? colors.gilt : 'transparent', backgroundColor: on ? withAlpha(colors.gilt, 0.12) : 'transparent' }}>
+                {imgW > 0 ? (
+                  <View style={{ paddingVertical: spacing.xs }}>
+                    <Cassette width={imgW} title="LookBack" detail="C90" played={0.3} style={s} />
+                  </View>
+                ) : null}
+                <Text style={[typography.caption, { width: '100%', textAlign: 'center', color: on ? colors.ink : colors.inkMuted, textDecorationLine: on ? 'underline' : 'none' }]}>{s.name}</Text>
+              </View>
+            </PressableScale>
+          </View>
+        );
+      })}
+    </View>
+  );
+}

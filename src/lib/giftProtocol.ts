@@ -50,7 +50,8 @@ export interface SdpNote {
   key: string;
   sig: string;
 }
-export type Signal = Knock | { t: 'yes' | 'no' | 'had'; gift: string; from: string } | { t: 'here'; from: string } | SdpNote;
+/** `mail`: a sealed envelope for this gift is waiting in your mailbox (lib/mailbox.ts). */
+export type Signal = Knock | { t: 'yes' | 'no' | 'had' | 'mail'; gift: string; from: string } | { t: 'here'; from: string } | SdpNote;
 
 export interface GiftFile {
   ext: string;
@@ -93,6 +94,7 @@ export function parseSignal(raw: unknown, me: string): Signal | null {
     case 'yes':
     case 'no':
     case 'had':
+    case 'mail':
       return { t: m.t, gift, from };
     case 'sdp': {
       const sdp = m.sdp as Record<string, unknown> | undefined;

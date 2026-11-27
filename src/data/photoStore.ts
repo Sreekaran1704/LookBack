@@ -84,3 +84,25 @@ export function listPhotoNames(): Set<string> {
 export async function readPhotoBytes(relativePath: string): Promise<Uint8Array<ArrayBuffer>> {
   return new Uint8Array(await new File(Paths.document, relativePath).arrayBuffer());
 }
+
+/** The widget's copy of a photo: small (a widget's picture must stay well under Android's bitmap limit). */
+const WIDGET_PHOTO_PX = 520;
+const WIDGET_PHOTO_QUALITY = 0.72;
+
+/**
+ * A photo as a small JPEG data URI for a home-screen widget (the widget host can only show http(s) or data images).
+ * `relativePath` is a stored photo path (an entry's or a received page's). Null if it can't be read.
+ */
+export async function widgetPhoto(relativePath: string): Promise<string | null> {
+  try {
+    const uri = new File(Paths.document, relativePath).uri;
+    const context = ImageManipulator.manipulate(uri);
+    context.resize({ width: WIDGET_PHOTO_PX });
+    const image = await context.renderAsync();
+    const saved = await image.saveAsync({ format: SaveFormat.JPEG, compress: WIDGET_PHOTO_QUALITY, base64: true });
+    return saved.base64 ? `data:image/jpeg;base64,${saved.base64}` : null;
+  } catch (error) {
+    console.warn('[photoStore] Could not make a widget photo', relativePath, error);
+    return null;
+  }
+}
