@@ -1877,7 +1877,7 @@ render(
     c.drawRRect(CK.RRectXY(CK.XYWHRect(40, 156, 560, 290), 14, 14), paint({ hex: '#EED4CC', stroke: 2 }));
     const pen = paint({ hex: '#3A2A55' });
     const hand = new CK.Font(caveat, 40);
-    ['the chai place by the station', 'closed today. we have to find', 'a new one when you are back ♡'].forEach((line, i) => c.drawText(line, 66, 222 + i * 62, pen, hand));
+    ['the chai place by the station', 'closed today. we have to find', 'a new one when you are back.'].forEach((line, i) => c.drawText(line, 66, 222 + i * 62, pen, hand));
   },
   'widget-person-preview.png',
   480,

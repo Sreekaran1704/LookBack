@@ -4,7 +4,7 @@ import { ScrollView, Text, View } from 'react-native';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { DiaryDock } from '../components/DiaryDock';
 import { GiftFlight, type FlightState } from '../components/GiftFlight';
-import { MyCard, NearbyPeople, ScanPerson } from '../components/People';
+import { MyCard, ScanPerson } from '../components/People';
 import { PersonButton } from '../components/PersonSeal';
 import { PageHeader, Panel, usePageContentStyle, type BarAction } from '../components/Screen';
 import { PaperBackground } from '../components/scrapbook/PaperBackground';
@@ -12,10 +12,9 @@ import { Texture } from '../components/scrapbook/Texture';
 import { sheetIn, sheetOut } from '../components/transitions';
 import { accountRepository, type AccountStatus } from '../data';
 import { sharingRepository } from '../data/sharingRepository';
-import { giveMemory, type GiftState } from '../data/social/postman';
+import { addPersonAndTell, giveMemory, remindToAddBack, type GiftState } from '../data/social/postman';
 import { useEntry, useProfile } from '../hooks/useData';
-import { useNearbyPeople } from '../hooks/useNearby';
-import { useGiftProblem, useGiftProgress, useGiftState, useOutbox, usePeople } from '../hooks/useSharing';
+import { useGiftHeard, useGiftProblem, useGiftProgress, useGiftState, useOutbox, usePeople } from '../hooks/useSharing';
 import { formatDisplayDate } from '../lib/dates';
 import { useTheme } from '../theme';
 
@@ -53,6 +52,7 @@ export default function GiveScreen() {
   const giftState = useGiftState(gift?.id ?? null);
   const giftProgress = useGiftProgress(gift?.id ?? null);
   const giftProblem = useGiftProblem(gift?.id ?? null);
+  const giftHeard = useGiftHeard(gift?.id ?? null);
   const name = profile?.name || 'Someone';
   useEffect(() => {
     const load = () => accountRepository.getStatus().then(setAccount, () => undefined);
@@ -60,8 +60,6 @@ export default function GiveScreen() {
     return accountRepository.subscribe(load);
   }, []);
   const me = account?.findable ? account.id : null;
-  const [nearbyState, nearby, retryNearby] = useNearbyPeople(!!me);
-  const newNearby = nearby.filter((p) => !people.some((known) => known.id === p.id));
 
   if (!entryId) return <Redirect href="/shared" />;
 
@@ -71,7 +69,12 @@ export default function GiveScreen() {
     setBusy(true);
     setProblem('');
     try {
-      await sharingRepository.addPerson(person.id, person.name, person.key ?? null, trust);
+      await addPersonAndTell(person.id, person.name, person.key ?? null, trust);
+      // Pages only go between friends: someone new has to add you back first (they've just been asked).
+      if (!(await sharingRepository.person(person.id))?.friends) {
+        setProblem(`Asked ${person.name} to add you back. Once they do, you can give them pages.`);
+        return;
+      }
       setFlightHidden(false);
       setGift({ id: await giveMemory(entry.id, person.id), name: person.name, personId: person.id });
     } catch (e) {
@@ -108,10 +111,29 @@ export default function GiveScreen() {
             <Text style={[typography.caption, { color: colors.onDeskMuted }]}>
               {what} go straight from your phone to theirs, encrypted. Your reply to yourself stays with you.
             </Text>
-            {people.map((p) => (
-              <PersonButton key={p.id} id={p.id} name={p.name} portrait={p.portrait} label={`Give to ${p.name}`} disabled={busy} onPress={() => void give(p)} />
-            ))}
-            <NearbyPeople state={nearbyState} people={newNearby} busy={busy} onRetry={retryNearby} onPick={(p) => void give(p)} actionLabel={(n) => `Give to ${n} · beside you`} compact />
+            {people.map((p) =>
+              p.friends ? (
+                <PersonButton key={p.id} id={p.id} name={p.name} portrait={p.portrait} label={`Give to ${p.name}`} disabled={busy} onPress={() => void give(p)} />
+              ) : (
+                // Not friends yet: they haven't added you back. Tapping asks them again.
+                <PersonButton
+                  key={p.id}
+                  id={p.id}
+                  name={p.name}
+                  portrait={p.portrait}
+                  main={false}
+                  label={`${p.name} hasn't added you back · remind`}
+                  disabled={busy}
+                  onPress={() => {
+                    setProblem('');
+                    remindToAddBack(p.id).then(
+                      () => setProblem(`Reminded ${p.name}. Once they add you back, you can give them pages.`),
+                      (e: unknown) => setProblem(e instanceof Error ? e.message : String(e)),
+                    );
+                  }}
+                />
+              ),
+            )}
           </View>
         )}
         {problem ? (
@@ -148,6 +170,7 @@ export default function GiveScreen() {
           state={FLIGHT[giftState ?? (outbox.some((o) => o.id === gift.id) ? 'knocking' : 'sent')]}
           progress={giftProgress}
           problem={giftProblem}
+          heard={giftHeard}
           onClose={() => {
             setFlightHidden(true);
             if (giftState === 'sent' || giftState === 'mailed' || giftState === 'declined') setGift(null);

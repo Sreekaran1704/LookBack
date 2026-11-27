@@ -89,6 +89,58 @@ const MIGRATIONS: readonly string[] = [
   ALTER TABLE people ADD COLUMN portrait TEXT;
   ALTER TABLE received_letters ADD COLUMN sender_portrait TEXT;
   `,
+  // v11: pages only go between friends: someone you added who has added you too (or whose add you accepted). Anyone
+  // who already gave you a page has you, so they start as friends; the rest find out with their next hello.
+  `
+  ALTER TABLE people ADD COLUMN friends INTEGER NOT NULL DEFAULT 0;
+  UPDATE people SET friends = 1 WHERE id IN (SELECT DISTINCT sender_id FROM received_letters);
+  -- The pages you gave each person and how each went (waiting / sealed / kept / declined), for their page in Shared.
+  -- Gives from before this version weren't kept anywhere once delivered; the ones still on their way are copied in.
+  CREATE TABLE IF NOT EXISTS given (
+    id TEXT PRIMARY KEY NOT NULL,
+    entry_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    memory_date TEXT,
+    given_at TEXT NOT NULL,
+    state TEXT NOT NULL DEFAULT 'waiting'
+  );
+  INSERT OR IGNORE INTO given (id, entry_id, person_id, given_at) SELECT id, entry_id, person_id, created_at FROM outbox;
+  -- Received pages thrown away (e.g. replaced by a newer version), so a Drive restore never brings them back.
+  CREATE TABLE IF NOT EXISTS removed_letters (id TEXT PRIMARY KEY NOT NULL, removed_at TEXT NOT NULL);
+  `,
+  // v12: when you last removed someone (`mine`) and when they last removed you (`theirs`, from their hellos). Kept
+  // after removing them: if you both did, your pages start over (lib/friendship.ts).
+  `
+  CREATE TABLE IF NOT EXISTS cuts (person_id TEXT PRIMARY KEY NOT NULL, mine TEXT, theirs TEXT);
+  `,
+  // v13: chat between friends (lib/chat.ts): text and voice messages and reactions (also kept as messages until
+  // delivered), each person's latest reaction on a page or message, and friend requests ("added you") kept until
+  // answered.
+  `
+  CREATE TABLE IF NOT EXISTS messages (
+    id TEXT PRIMARY KEY NOT NULL,
+    person_id TEXT NOT NULL,
+    mine INTEGER NOT NULL,
+    kind TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    voice_path TEXT,
+    voice_ms INTEGER,
+    voice_wave TEXT,
+    at TEXT NOT NULL,
+    state TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS messages_person ON messages (person_id, at);
+  CREATE TABLE IF NOT EXISTS reactions (
+    target TEXT NOT NULL,
+    from_id TEXT NOT NULL,
+    emoji TEXT NOT NULL,
+    at TEXT NOT NULL,
+    PRIMARY KEY (target, from_id)
+  );
+  CREATE TABLE IF NOT EXISTS requests (id TEXT PRIMARY KEY NOT NULL, name TEXT NOT NULL, public_key TEXT, at TEXT NOT NULL);
+  `,
+  // v14: a best friend's heart (yours to give, kept on this phone).
+  `ALTER TABLE people ADD COLUMN best INTEGER NOT NULL DEFAULT 0;`,
 ];
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;

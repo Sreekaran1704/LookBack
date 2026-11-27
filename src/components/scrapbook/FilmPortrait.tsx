@@ -1,6 +1,6 @@
 import { memo, useId, type ReactNode } from 'react';
 import Svg, { Circle, ClipPath, Defs, Ellipse, G, Path, RadialGradient, Rect, Stop, Text as SvgText } from 'react-native-svg';
-import { coversHair, filmTone, PORTRAIT_OPTIONS, type Portrait } from '../../lib/portrait';
+import { coversHair, filmTone, PORTRAIT_OPTIONS, type Portrait, type PortraitExpression } from '../../lib/portrait';
 import { mixHex } from '../../theme';
 
 /**
@@ -53,8 +53,8 @@ const FACE: Record<string, string> = {
 
 const pick = <K extends keyof typeof PORTRAIT_OPTIONS>(p: Portrait, k: K) => PORTRAIT_OPTIONS[k][p[k]] as (typeof PORTRAIT_OPTIONS)[K][number];
 
-/** The picture itself, in a 64 × 64 box. */
-function Art({ p }: { p: Portrait }) {
+/** The picture itself, in a 64 × 64 box. `face`: a passing expression drawn over the chosen eyes / mouth. */
+function Art({ p, face: expression = null }: { p: Portrait; face?: PortraitExpression | null }) {
   const t = (hex: string) => filmTone(p.film, hex);
   const sk = SKIN[p.skin] ?? SKIN[5]!;
   const hc = HAIR[p.hairColor] ?? HAIR[0]!;
@@ -164,9 +164,22 @@ function Art({ p }: { p: Portrait }) {
   // ---- eyes and brows
   const eyeKind = pick(p, 'eyes');
   const lashes = pick(p, 'lashes') === 'lashes';
-  const ry = { round: 2.5, almond: 1.9, monolid: 1.5, hooded: 2.1 }[eyeKind];
+  const ry = { round: 2.5, almond: 1.9, monolid: 1.5, hooded: 2.1 }[eyeKind] * (expression === 'wow' ? 1.3 : 1);
   const iris = t(EYES[p.eyeColor] ?? EYES[0]!);
-  const eye = (x: number) => (
+  // Closed for the moment: a happy arch (joy, the winking eye) or a soft line (blink).
+  const shut = (x: number) =>
+    expression === 'joy' || (expression === 'wink' && x > 32) ? 'happy' : expression === 'blink' ? 'closed' : null;
+  const eye = (x: number) =>
+    shut(x) ? (
+      <Path
+        key={x}
+        d={shut(x) === 'happy' ? `M${x - 3} 31 Q${x} 27.8 ${x + 3} 31` : `M${x - 3} 30.3 Q${x} 31.8 ${x + 3} 30.3`}
+        stroke={inkT}
+        strokeWidth={1.1}
+        fill="none"
+        strokeLinecap="round"
+      />
+    ) : (
     <G key={x}>
       <Ellipse cx={x} cy={30.2} rx={3.1} ry={ry} fill={t(EYE_WHITE)} />
       <Circle cx={x} cy={30.3} r={Math.min(1.8, ry)} fill={iris} />
@@ -179,11 +192,12 @@ function Art({ p }: { p: Portrait }) {
       {eyeKind === 'monolid' ? null : <Path d={`M${x - 2.6} ${29.3 - ry} Q${x} ${28.2 - ry} ${x + 2.6} ${29.3 - ry}`} stroke={shade} strokeWidth={0.45} fill="none" />}
       {lashes ? <Path d={`M${x + 2.6} ${30.2 - ry * 0.9} l1.3 -0.9 M${x + 1.6} ${30.2 - ry * 1.25} l0.9 -1.1`} stroke={inkT} strokeWidth={0.55} /> : null}
     </G>
-  );
+    );
   const [bw, ba] = ({ thin: [0.9, 1.4], straight: [1.6, 0.2], arched: [1.4, 2.2], thick: [2.4, 1] } as const)[pick(p, 'brows')];
   const browColor = t(mixHex(hc, INK, 0.25));
+  const lift = expression === 'wow' ? 1.8 : 0;
   const brow = (x: number, dir: number) => (
-    <Path key={`b${x}`} d={`M${x - 3.4} 26.2 Q${x} ${26.2 - ba} ${x + 3.4} ${26.2 + dir * 0.3}`} stroke={browColor} strokeWidth={bw} fill="none" strokeLinecap="round" />
+    <Path key={`b${x}`} d={`M${x - 3.4} ${26.2 - lift} Q${x} ${26.2 - ba - lift} ${x + 3.4} ${26.2 + dir * 0.3 - lift}`} stroke={browColor} strokeWidth={bw} fill="none" strokeLinecap="round" />
   );
 
   // ---- nose and mouth
@@ -207,18 +221,25 @@ function Art({ p }: { p: Portrait }) {
   const beard = pick(p, 'beard');
   const bearded = beard === 'short beard' || beard === 'full beard';
   const mouthKind = pick(p, 'mouth');
+  const grin = (
+    <G>
+      <Path d="M28.2 38.2 Q32 38.9 35.8 38.2 Q35 42.4 32 42.4 Q29 42.4 28.2 38.2Z" fill={t(MOUTH_IN)} />
+      <Path d="M28.8 38.5 Q32 39.2 35.2 38.5 L34.8 39.8 Q32 40.3 29.2 39.8Z" fill={t(EYE_WHITE)} />
+    </G>
+  );
   const mouth =
-    bearded && mouthKind !== 'grin' ? (
+    expression === 'wow' ? (
+      <Ellipse cx={32} cy={40} rx={1.9} ry={2.4} fill={t(MOUTH_IN)} />
+    ) : expression === 'joy' ? (
+      grin
+    ) : expression === 'wink' ? (
+      <Path d="M28.6 38.4 Q32 41.8 35.4 38.4" stroke={lip} strokeWidth={1.3} fill="none" strokeLinecap="round" />
+    ) : bearded && mouthKind !== 'grin' ? (
       <Path d="M29.4 40 q2.6 1.3 5.2 0" stroke={lip} strokeWidth={1.1} fill="none" />
     ) : (
       {
         smile: <Path d="M28.6 38.6 Q32 41.4 35.4 38.6" stroke={lip} strokeWidth={1.2} fill="none" strokeLinecap="round" />,
-        grin: (
-          <G>
-            <Path d="M28.2 38.2 Q32 38.9 35.8 38.2 Q35 42.4 32 42.4 Q29 42.4 28.2 38.2Z" fill={t(MOUTH_IN)} />
-            <Path d="M28.8 38.5 Q32 39.2 35.2 38.5 L34.8 39.8 Q32 40.3 29.2 39.8Z" fill={t(EYE_WHITE)} />
-          </G>
-        ),
+        grin,
         neutral: <Path d="M29.4 39.4 L34.6 39.4" stroke={lip} strokeWidth={1.2} strokeLinecap="round" />,
         smirk: <Path d="M29 39.6 Q32 40.2 35.4 38.4" stroke={lip} strokeWidth={1.2} fill="none" strokeLinecap="round" />,
       }[mouthKind]
@@ -435,7 +456,7 @@ function Art({ p }: { p: Portrait }) {
  * The portrait in its film frame. `size` is its height; it is 64:78 wide. `hole` is the colour behind the sprocket
  * holes (the card or page it sits on). `frame` is the number printed on the film's edge.
  */
-export const FilmPortrait = memo(function FilmPortrait({ portrait, size, hole, frame = '24A' }: { portrait: Portrait; size: number; hole: string; frame?: string }) {
+export const FilmPortrait = memo(function FilmPortrait({ portrait, size, hole, frame = '24A', face = null }: { portrait: Portrait; size: number; hole: string; frame?: string; face?: PortraitExpression | null }) {
   const id = useId().replace(/[^a-zA-Z0-9]/g, '');
   const holes = [];
   for (let k = 0; k < 6; k++) {
@@ -469,11 +490,37 @@ export const FilmPortrait = memo(function FilmPortrait({ portrait, size, hole, f
       <G clipPath={`url(#c${id})`}>
         <Rect x={4} y={13} width={56} height={52} fill={PICTURE_BG[portrait.film] ?? PICTURE_BG[2]} />
         <G transform="translate(4 12.5) scale(0.875 0.82)">
-          <Art p={portrait} />
+          <Art p={portrait} face={face} />
         </G>
         {lamplight ? <Rect x={4} y={13} width={56} height={52} fill={GOLD} opacity={0.08} /> : null}
         <Rect x={4} y={13} width={56} height={52} fill={`url(#v${id})`} />
       </G>
+    </Svg>
+  );
+});
+
+/**
+ * Just the person, out of the film: a round die-cut sticker of them (a white edge, the film's backdrop behind), drawn
+ * with a passing `face` when there is one. The portrait maker's little "you" that hops out of the frame and follows you
+ * down the choices.
+ */
+export const PortraitSticker = memo(function PortraitSticker({ portrait, size, face = null }: { portrait: Portrait; size: number; face?: PortraitExpression | null }) {
+  const id = useId().replace(/[^a-zA-Z0-9]/g, '');
+  return (
+    <Svg width={size} height={size} viewBox="0 0 64 64">
+      <Defs>
+        <ClipPath id={`s${id}`}>
+          <Circle cx={32} cy={32} r={29} />
+        </ClipPath>
+      </Defs>
+      <Circle cx={32} cy={32} r={31.5} fill={WHITE} />
+      <G clipPath={`url(#s${id})`}>
+        <Rect width={64} height={64} fill={PICTURE_BG[portrait.film] ?? PICTURE_BG[2]} />
+        <G transform="translate(2 4)">
+          <Art p={portrait} face={face} />
+        </G>
+      </G>
+      <Circle cx={32} cy={32} r={29} fill="none" stroke={BLACK} strokeOpacity={0.12} strokeWidth={0.8} />
     </Svg>
   );
 });

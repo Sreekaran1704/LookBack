@@ -61,6 +61,8 @@ export interface Look {
   tone: PaperTone;
   /** The cassette (app icon and every cassette in the app), see cassettes.ts. */
   cassette: CassetteStyleId;
+  /** The person picked the cassette themselves in You → Look (so a new default never replaces it). */
+  cassetteChosen?: boolean;
 }
 
 export const DEFAULT_LOOK: Look = { paper: DEFAULT_PAPER, tone: 'light', cassette: DEFAULT_CASSETTE };
@@ -79,7 +81,10 @@ export function parseLook(raw: string | null | undefined): Look {
     return {
       paper: PAPERS.some((p) => p.name === name) ? (name as string) : DEFAULT_PAPER,
       tone: value.tone === 'dark' ? 'dark' : 'light',
-      cassette: isCassetteStyleId(value.cassette) ? value.cassette : DEFAULT_CASSETTE,
+      // Clear was the default before 1.3.3 and was saved with every look, picked or not: unless the person picked a
+      // cassette themselves, they move to the new default (metal).
+      cassette: isCassetteStyleId(value.cassette) && (value.cassetteChosen === true || value.cassette !== 'clear') ? value.cassette : DEFAULT_CASSETTE,
+      ...(value.cassetteChosen === true ? { cassetteChosen: true } : {}),
     };
   } catch {
     return DEFAULT_LOOK;

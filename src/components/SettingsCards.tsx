@@ -37,7 +37,7 @@ export function LookCard({ palette }: { palette: YearPalette }) {
       </View>
       <Help>The colour of your paper. Night is the same paper by lamplight.</Help>
       <View style={{ paddingTop: spacing.md }}>
-        <CassettePicker value={look.cassette} onChange={(cassette) => setLook({ ...look, cassette })} />
+        <CassettePicker value={look.cassette} onChange={(cassette) => setLook({ ...look, cassette, cassetteChosen: true })} />
       </View>
       <Help>Your cassette: the app icon and every tape in the diary. The icon changes once you leave the app.</Help>
     </Panel>

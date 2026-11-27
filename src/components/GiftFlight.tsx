@@ -97,6 +97,7 @@ export function GiftFlight({
   state,
   progress,
   problem,
+  heard = false,
   onClose,
   onOpen,
 }: {
@@ -114,6 +115,8 @@ export function GiftFlight({
   progress: number;
   /** Why it's stuck, if it is: said plainly instead of the usual words. */
   problem?: GiftProblem | null;
+  /** Giving: their phone heard it and is asking them (until then, it's still looking for their phone). */
+  heard?: boolean;
   onClose: () => void;
   /** Receiving, once kept: open it. */
   onOpen?: () => void;
@@ -203,7 +206,7 @@ export function GiftFlight({
     problemWords?.line ??
     (direction === 'out'
       ? {
-          waiting: `Waiting for ${name} to accept…`,
+          waiting: heard ? `${name} is looking at it · waiting for their Accept…` : `Knocking on ${name}'s phone…`,
           connecting: `${name} accepted · finding their phone…`,
           moving: `Passing it to ${name}… ${Math.round(progress * 100)}%`,
           done: `${name} has it now`,

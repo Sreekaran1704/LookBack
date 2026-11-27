@@ -17,6 +17,7 @@
  */
 
 import { isPublicKey, isSignature } from './identity';
+import { parseGot, type GotPage } from './friendship';
 import { parsePortrait } from './portrait';
 
 const ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -50,8 +51,37 @@ export interface SdpNote {
   key: string;
   sig: string;
 }
-/** `mail`: a sealed envelope for this gift is waiting in your mailbox (lib/mailbox.ts). */
-export type Signal = Knock | { t: 'yes' | 'no' | 'had' | 'mail'; gift: string; from: string } | { t: 'here'; from: string } | SdpNote;
+/**
+ * Someone made you one of their people (`added`), or says hello (`here`): with their name and phone key, so a phone
+ * that hasn't added them back can offer to (null from an older app, which sends a bare `here`).
+ */
+export interface Hello {
+  t: 'here' | 'added';
+  from: string;
+  name: string | null;
+  key: string | null;
+  /** Whether the sender already counts you as a friend (null from an older app): if not, you say hello back. */
+  friend: boolean | null;
+  /** When the sender last removed you (null: never; undefined: an older app that doesn't say). */
+  cut?: string | null;
+  /** Pages the sender got from you, so your phone can list what you gave them (lib/friendship.ts). */
+  got: GotPage[];
+}
+/**
+ * `mail`: a sealed envelope for this gift is waiting in your mailbox (lib/mailbox.ts). `seen`: the receiver's phone
+ * heard the knock and is asking its person, so the giver waits for the answer instead of sealing it straight away.
+ */
+/** A chat message sealed for you (lib/chat.ts), small enough to ride in the note: `box` is the envelope, base64url. */
+export interface ChatNote {
+  t: 'msg';
+  gift: string;
+  from: string;
+  box: string;
+}
+/** `got`: your phone has the message with this id (the sender's tick). */
+export type Signal = Knock | { t: 'yes' | 'no' | 'had' | 'mail' | 'seen' | 'got'; gift: string; from: string } | Hello | SdpNote | ChatNote;
+/** The most a sealed message riding in a note may be: base64 makes it a third bigger, and send_note allows 24 KB. */
+export const CHAT_BOX_MAX = 16_000;
 
 export interface GiftFile {
   ext: string;
@@ -84,7 +114,14 @@ export function parseSignal(raw: unknown, me: string): Signal | null {
   const m = raw as Record<string, unknown>;
   if (!isId(m.from) || m.from.toLowerCase() === me.toLowerCase()) return null;
   const from = m.from.toLowerCase();
-  if (m.t === 'here') return { t: 'here', from };
+  if (m.t === 'here' || m.t === 'added') {
+    const name = typeof m.name === 'string' && m.name.trim() ? cleanName(m.name) : null;
+    const key = isPublicKey(m.key) ? m.key : null;
+    // "added" is only worth anything with a name to show.
+    if (m.t === 'added' && !name) return null;
+    const cut = typeof m.c === 'string' && m.c.length <= 40 ? m.c : m.c === null ? null : undefined;
+    return { t: m.t, from, name, key, friend: typeof m.f === 'boolean' ? m.f : null, ...(cut === undefined ? {} : { cut }), got: parseGot(m.got) };
+  }
   if (!isId(m.gift)) return null;
   const gift = m.gift.toLowerCase();
   switch (m.t) {
@@ -95,7 +132,12 @@ export function parseSignal(raw: unknown, me: string): Signal | null {
     case 'no':
     case 'had':
     case 'mail':
+    case 'seen':
+    case 'got':
       return { t: m.t, gift, from };
+    case 'msg':
+      if (typeof m.box !== 'string' || m.box.length > CHAT_BOX_MAX * 1.4 || !/^[A-Za-z0-9_-]+$/.test(m.box)) return null;
+      return { t: 'msg', gift, from, box: m.box };
     case 'sdp': {
       const sdp = m.sdp as Record<string, unknown> | undefined;
       if (!sdp || (sdp.type !== 'offer' && sdp.type !== 'answer') || !str(sdp.sdp, SDP_MAX)) return null;
@@ -201,4 +243,33 @@ export class GiftAssembler {
     }
     return out;
   }
+}
+
+/** A knock nobody's phone answered within this long: their LookBack is closed, so the page is sealed for them. */
+export const KNOCK_UNHEARD_MS = 4000;
+/** Their phone heard it and is asking them: wait this long for their Accept before sealing it instead. */
+export const KNOCK_ASKING_MS = 60_000;
+
+/**
+ * When a knocked page goes into the mailbox instead: after a few seconds if their phone never said it heard (closed,
+ * asleep, an older app), but only after a minute if it did (they're looking at the question right now).
+ */
+export function sealAfterMs(heard: boolean): number {
+  return heard ? KNOCK_ASKING_MS : KNOCK_UNHEARD_MS;
+}
+
+/**
+ * Whether a hello / "added you" from someone should offer "add them back": they aren't one of your people yet, you
+ * haven't said not now to them, and they told you who they are (an older app's bare hello has no name).
+ */
+/**
+ * Whether a hello from someone you have deserves a hello back: you've only just become friends, or they don't know
+ * you are yet (an older app sends no flag and never needs one). The reply says you are, so it stops after one round.
+ */
+export function helloBack(newlyFriends: boolean, note: Hello): boolean {
+  return newlyFriends || note.friend === false;
+}
+
+export function offerAddBack(note: Hello, known: boolean, dismissed: ReadonlySet<string>): boolean {
+  return !known && !dismissed.has(note.from) && !!note.name;
 }

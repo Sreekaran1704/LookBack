@@ -52,6 +52,11 @@ November 22, 2026.
 
 - A note's sender is real, but the name in it is whatever they typed; someone you already have shows under the name
   you saved. Nothing arrives unless you accept it.
+- `202611270001_more_notes.sql` (for 1.3.3, applied November 27, 2026): `send_note` also allows `seen` (the receiver's phone
+  heard a knock and is asking, so the giver waits up to a minute instead of sealing it after 4 s) and `added` ("I
+  added you", so the other phone offers Add back). Only the allowed list changes.
+- `202611270002_chat_notes.sql` (for 1.3.3, applied November 27, 2026): `send_note` also allows `msg` (a chat message
+  or reaction, sealed end to end for the other phone) and `got` (its delivery tick). Only the allowed list changes.
 - Deleting your account (You → Delete sharing account) makes a new account id next time you connect.
 - Phones on different mobile networks may not reach each other directly. Then the page goes through the **sealed
   mailbox** (`202611260001_mailbox.sql`, applied November 26, 2026; Security Advisor: 0 errors, its only new warning is the usual

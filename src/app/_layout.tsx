@@ -2,6 +2,7 @@ import { Caveat_500Medium, Caveat_600SemiBold, Caveat_700Bold } from '@expo-goog
 import { CormorantGaramond_600SemiBold, CormorantGaramond_600SemiBold_Italic } from '@expo-google-fonts/cormorant-garamond';
 import { IMFellEnglish_400Regular, IMFellEnglish_400Regular_Italic } from '@expo-google-fonts/im-fell-english';
 import { useFonts } from 'expo-font';
+import Constants from 'expo-constants';
 import * as Notifications from 'expo-notifications';
 import { router, Stack } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -13,11 +14,13 @@ import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-na
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { BookFlightProvider } from '../components/BookFlight';
+import { AddBackArrival } from '../components/AddBackArrival';
 import { GiftArrival } from '../components/GiftArrival';
 import { Intro } from '../components/Intro';
 import { NavBar, NavBarProvider } from '../components/NavBar';
 import { preloadBuddy } from '../components/scrapbook/Buddy';
 import { StatusPillProvider } from '../components/StatusPill';
+import { WhatsNewSheet } from '../components/WhatsNewSheet';
 import { preloadLook, ThemeProvider } from '../components/ThemeProvider';
 import { syncAppIcon } from '../device/appIcon';
 import { backupRepository, entriesRepository, settingsRepository } from '../data';
@@ -27,6 +30,9 @@ import { configureNotifications, refreshReminders } from '../notifications/sched
 import { useTheme } from '../theme';
 import { refreshPersonWidget, refreshWidget } from '../widget';
 import { sharingRepository } from '../data/sharingRepository';
+import { whatsNewToShow, type WhatsNewCard } from '../lib/whatsNew';
+
+const APP_VERSION = Constants.expoConfig?.version ?? '0';
 
 /** How long the native splash takes to fade into the intro (the intro waits for it before moving). */
 const SPLASH_FADE_MS = 150;
@@ -137,13 +143,23 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
   const theme = useTheme();
   const { colors, motion } = theme;
   const [showIntro, setShowIntro] = useState(true);
-  // First run: once the intro has lifted, the bunny asks its few questions.
+  // First run: once the intro has lifted, the bunny asks its few questions. After an update instead, what's new.
+  const [news, setNews] = useState<WhatsNewCard[]>([]);
   useEffect(() => {
     if (showIntro || loading) return;
-    settingsRepository.getOnboarded().then((done) => {
+    (async () => {
+      const [done, seen] = await Promise.all([settingsRepository.getOnboarded(), settingsRepository.getWhatsNewSeen()]);
       if (!done) router.push('/welcome');
-    }, () => undefined);
+      const cards = whatsNewToShow({ seen, current: APP_VERSION, onboarded: done });
+      if (cards.length > 0) setNews(cards);
+      // A fresh install has nothing to catch up on; either way this version's news is done with.
+      else if (seen !== APP_VERSION) await settingsRepository.setWhatsNewSeen(APP_VERSION);
+    })().catch(() => undefined);
   }, [showIntro, loading]);
+  const closeNews = () => {
+    setNews([]);
+    settingsRepository.setWhatsNewSeen(APP_VERSION).catch(() => undefined);
+  };
   const { data: entries = [] } = useAllEntries();
   const today = useToday();
 
@@ -206,10 +222,14 @@ function AppShell({ loading, error }: { loading: boolean; error: string | null }
         <Stack.Screen name="welcome" options={{ animation: 'fade', gestureEnabled: false }} />
         <Stack.Screen name="settings" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
         <Stack.Screen name="portrait" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
-        <Stack.Screen name="person/[id]" options={{ presentation: 'transparentModal', animation: 'slide_from_right' }} />
+        {/* Chat and a friend's profile open like apps on a Samsung phone (useAppOpen): no stack slide of their own. */}
+        <Stack.Screen name="person/[id]" options={{ presentation: 'transparentModal', animation: 'none' }} />
+        <Stack.Screen name="friend/[id]" options={{ presentation: 'transparentModal', animation: 'none' }} />
       </Stack>
       <NavBar />
       <GiftArrival />
+      <AddBackArrival />
+      {news.length > 0 ? <WhatsNewSheet visible version={APP_VERSION} cards={news} onDone={closeNews} /> : null}
       </NavBarProvider>
       {fadeFrom ? (
         <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: fadeFrom }, fadeStyle]} />

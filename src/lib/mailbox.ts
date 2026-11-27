@@ -67,6 +67,14 @@ const concat = (...parts: Uint8Array[]) => {
 const u32 = (n: number) => new Uint8Array([(n >>> 24) & 255, (n >>> 16) & 255, (n >>> 8) & 255, n & 255]);
 const readU32 = (b: Uint8Array, at: number) => ((b[at]! << 24) >>> 0) + (b[at + 1]! << 16) + (b[at + 2]! << 8) + b[at + 3]!;
 
+/** A sealed page waits on the server at most this long; then the giver takes it back (it goes when both are online). */
+export const MAIL_KEEP_MS = 7 * 24 * 60 * 60 * 1000;
+/** Whether a page sealed (given) at `givenAt` has waited long enough to be taken back. */
+export function mailExpired(givenAt: string, now: number): boolean {
+  const t = Date.parse(givenAt);
+  return Number.isFinite(t) && now - t >= MAIL_KEEP_MS;
+}
+
 /** Where an envelope lives in the box: under the receiver, then the giver (the server checks the giver is you). */
 export function mailPath(to: string, from: string, gift: string): string {
   return `${to.toLowerCase()}/${from.toLowerCase()}/${gift.toLowerCase()}.lbm`;

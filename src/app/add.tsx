@@ -1,6 +1,6 @@
 import { Redirect, useLocalSearchParams } from 'expo-router';
 import { useEffect } from 'react';
-import { sharingRepository } from '../data/sharingRepository';
+import { addPersonAndTell } from '../data/social/postman';
 import { myAccountId } from '../data/social/repository';
 import { parsePersonLink, personLink } from '../lib/personLink';
 
@@ -13,7 +13,7 @@ export default function AddPerson() {
   const person = u ? parsePersonLink(personLink(u, n ?? '')) : null;
   useEffect(() => {
     if (!person) return;
-    void myAccountId().then((me) => (me === person.id ? undefined : sharingRepository.addPerson(person.id, person.name)));
+    void myAccountId().then((me) => (me === person.id ? undefined : addPersonAndTell(person.id, person.name)));
   }, [person?.id, person?.name]); // eslint-disable-line react-hooks/exhaustive-deps
   return <Redirect href="/shared" />;
 }

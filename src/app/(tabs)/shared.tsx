@@ -5,8 +5,7 @@ import { Text, View } from 'react-native';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { PillButton } from '../../components/Buttons';
 import { useNavScroll } from '../../components/NavBar';
-import { usePageActive } from '../../components/PageActive';
-import { MyCard, NearbyPeople, ScanPerson, VisibleNearby } from '../../components/People';
+import { MyCard, ScanPerson } from '../../components/People';
 import { PersonSeal } from '../../components/PersonSeal';
 import { PressableScale } from '../../components/PressableScale';
 import { PageFooter, PageHeader, Panel, usePageContentStyle } from '../../components/Screen';
@@ -14,10 +13,10 @@ import { PaperBackground } from '../../components/scrapbook/PaperBackground';
 import { Texture } from '../../components/scrapbook/Texture';
 import { sheetIn } from '../../components/transitions';
 import { accountRepository, type AccountStatus } from '../../data';
-import { sharingRepository, type Person } from '../../data/sharingRepository';
+import { type Person } from '../../data/sharingRepository';
+import { addBack, addPersonAndTell, notNowAddBack } from '../../data/social/postman';
 import { useProfile } from '../../hooks/useData';
-import { useNearbyPeople, useVisibleNearby } from '../../hooks/useNearby';
-import { useGonePeople, useOutbox, usePeople, useReceivedLetters } from '../../hooks/useSharing';
+import { useAddBackRequests, useGonePeople, useOutbox, usePeople, useReceivedLetters, useUnreadMessages } from '../../hooks/useSharing';
 import { formatDisplayDate, toLocalDate } from '../../lib/dates';
 import { groupByPerson } from '../../lib/sharedPeople';
 import { useTheme } from '../../theme';
@@ -33,7 +32,6 @@ function SharedScreen() {
   const reduceMotion = useReducedMotion();
   const content = usePageContentStyle();
   const onScroll = useNavScroll();
-  const active = usePageActive();
   const { data: profile } = useProfile();
   const name = profile?.name || 'Someone';
   const [account, setAccount] = useState<AccountStatus | null>(null);
@@ -43,6 +41,8 @@ function SharedScreen() {
   const people = usePeople();
   const letters = useReceivedLetters();
   const outbox = useOutbox();
+  const requests = useAddBackRequests();
+  const unreadChat = useUnreadMessages();
   const gone = useGonePeople();
   useEffect(() => {
     const load = () => accountRepository.getStatus().then(setAccount, () => undefined);
@@ -51,12 +51,9 @@ function SharedScreen() {
   }, []);
   const me = account?.findable ? account.id : null;
   // Bluetooth only while this page is in front (the bar pages stay built behind each other).
-  const [visible, retryVisible] = useVisibleNearby(!!me && active, name);
-  const [nearbyState, nearby, retryNearby] = useNearbyPeople(!!me && active);
-  const newNearby = nearby.filter((p) => !people.some((known) => known.id === p.id));
   const add = (person: { id: string; name: string; key?: string | null }, trust: 'scanned' | 'learned' = 'learned') => {
     setProblem('');
-    sharingRepository.addPerson(person.id, person.name, person.key ?? null, trust).catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
+    addPersonAndTell(person.id, person.name, person.key ?? null, trust).catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)));
   };
   const waitingFor = (p: Person) => outbox.filter((o) => o.personId === p.id).length;
   const groups = groupByPerson(people, letters);
@@ -66,7 +63,7 @@ function SharedScreen() {
     <View style={{ flex: 1 }}>
       <PaperBackground variant="dots" desk />
       <Animated.ScrollView contentContainerStyle={[content, { flexGrow: 1 }]} onScroll={onScroll} scrollEventThrottle={16}>
-        <PageHeader title="Shared" subtitle="pages passed between you and your people" accent={colors.gilt} buddy={false} />
+        <PageHeader title="Chat" subtitle="your friends, and the pages between you" accent={colors.gilt} buddy={false} />
         {/* The page sits low: what you tap is near your thumb. */}
         <View style={{ flex: 1 }} />
         {!account ? null : !me ? (
@@ -81,11 +78,37 @@ function SharedScreen() {
           </Panel>
         ) : (
           <>
+            {/* Like Snapchat's "Added me": people who added you, waiting for you to add them back. */}
+            {requests.length ? (
+              <Panel>
+                <Text style={[typography.heading, { color: colors.ink }]}>Added you</Text>
+                {requests.map((r) => (
+                  <View key={r.id} style={rowStyle}>
+                    <PersonSeal name={r.name} portrait={null} />
+                    <View style={{ flex: 1 }}>
+                      <Text numberOfLines={1} style={[typography.print, { color: colors.ink }]}>
+                        {r.name}
+                      </Text>
+                      <Text numberOfLines={1} style={[typography.caption, { color: colors.inkMuted, fontSize: 14, lineHeight: 18 }]}>
+                        added you · add back to be friends
+                      </Text>
+                    </View>
+                    <PillButton label="Not now" onPress={() => void notNowAddBack(r.id)} />
+                    <PillButton label="Add back" icon="person-add-outline" tone="dark" onPress={() => addBack(r.id).catch((e: unknown) => setProblem(e instanceof Error ? e.message : String(e)))} />
+                  </View>
+                ))}
+              </Panel>
+            ) : null}
             <Panel>
-              <Text style={[typography.heading, { color: colors.ink }]}>Your people</Text>
+              <Text style={[typography.heading, { color: colors.ink }]}>Friends</Text>
               {groups.map((g) => {
+                const chats = unreadChat.get(g.id) ?? 0;
                 const status = g.person && gone.has(g.id)
                   ? 'their account is gone · add them again'
+                  : g.person && !g.person.friends
+                    ? "added · waiting for them to add you back"
+                  : chats
+                    ? `💬 ${chats === 1 ? 'a new message' : `${chats} new messages`}`
                   : g.person && waitingFor(g.person)
                     ? `${waitingFor(g.person)} waiting to go to them`
                     : g.letters.length
@@ -94,18 +117,24 @@ function SharedScreen() {
                         ? `added ${formatDisplayDate(g.person.addedAt.slice(0, 10))}`
                         : '';
                 return (
-                  <PressableScale key={g.id} onPress={() => router.push(`/person/${g.id}`)} accessibilityRole="button" accessibilityLabel={`${g.name}: ${status}`}>
+                  <PressableScale
+                    key={g.id}
+                    // The chat grows out of the row you tapped.
+                    onPress={(e) => router.push({ pathname: '/person/[id]', params: { id: g.id, x: String(Math.round(e.nativeEvent.pageX)), y: String(Math.round(e.nativeEvent.pageY)) } })}
+                    accessibilityRole="button"
+                    accessibilityLabel={`${g.name}: ${status}`}
+                  >
                     <View style={rowStyle}>
                       <PersonSeal name={g.name} portrait={g.portrait} />
                       <View style={{ flex: 1 }}>
-                        <Text numberOfLines={1} style={[typography.print, { color: colors.ink, fontWeight: g.unread ? '700' : '400' }]}>
-                          {g.name}
+                        <Text numberOfLines={1} style={[typography.print, { color: colors.ink, fontWeight: g.unread || chats ? '700' : '400' }]}>
+                          {`${g.name}${g.person?.best ? ' ❤️' : ''}`}
                         </Text>
                         <Text numberOfLines={1} style={[typography.caption, { color: colors.inkMuted, fontSize: 14, lineHeight: 18 }]}>
                           {status}
                         </Text>
                       </View>
-                      {g.unread ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.sepia }} /> : null}
+                      {g.unread || chats ? <View style={{ width: 9, height: 9, borderRadius: 5, backgroundColor: colors.sepia }} /> : null}
                       <Ionicons name="chevron-forward" size={18} color={colors.inkMuted} />
                     </View>
                   </PressableScale>
@@ -114,11 +143,9 @@ function SharedScreen() {
               {groups.length ? null : (
                 <View style={{ flexDirection: 'row', alignItems: 'flex-start', gap: spacing.sm }}>
                   <Ionicons name="person-add-outline" size={18} color={colors.gilt} style={{ marginTop: 2 }} />
-                  <Text style={[typography.caption, { color: colors.inkMuted, flex: 1 }]}>{"Add the people you'd give a page to: beside you, or with My code and Scan."}</Text>
+                  <Text style={[typography.caption, { color: colors.inkMuted, flex: 1 }]}>{'Become friends by swapping codes: show them My code and they Scan it (or send it with Share code), then add each other.'}</Text>
                 </View>
               )}
-              <NearbyPeople state={nearbyState} people={newNearby} busy={false} onRetry={retryNearby} onPick={add} actionLabel={(n) => `Add ${n}`} compact />
-              {visible === 'on' || visible === 'offline' ? <VisibleNearby state={visible} name={name} onRetry={retryVisible} compact /> : null}
             </Panel>
 
             {showCard ? (

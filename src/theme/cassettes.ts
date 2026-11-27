@@ -159,10 +159,11 @@ export const CASSETTE_STYLES: readonly CassetteStyle[] = [
   },
 ];
 
-export const DEFAULT_CASSETTE: CassetteStyleId = 'clear';
+/** The cassette everyone starts with (1.3.3: the metal one); anyone can pick another in You → Look. */
+export const DEFAULT_CASSETTE: CassetteStyleId = 'metal';
 
 export function cassetteStyle(id: string | null | undefined): CassetteStyle {
-  return CASSETTE_STYLES.find((s) => s.id === id) ?? (CASSETTE_STYLES[0] as CassetteStyle);
+  return CASSETTE_STYLES.find((s) => s.id === id) ?? (CASSETTE_STYLES.find((s) => s.id === DEFAULT_CASSETTE) as CassetteStyle);
 }
 
 export function isCassetteStyleId(id: unknown): id is CassetteStyleId {

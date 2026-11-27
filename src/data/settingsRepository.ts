@@ -14,6 +14,8 @@ const KEY_ONBOARDED = 'onboarded';
 const KEY_BACKUP = 'backup';
 const KEY_AUTO_ACCEPT = 'pagesArriveByThemselves';
 const KEY_WIDGET_PERSON = 'widgetPerson';
+const KEY_WHATS_NEW = 'whatsNewSeen';
+const KEY_ADD_BACK_DISMISSED = 'addBackDismissed';
 
 const NO_BACKUP: BackupInfo = { account: null, lastBackupAt: null };
 
@@ -42,6 +44,12 @@ export interface SettingsRepository {
   /** Whose pages the "From your person" widget shows (null: whoever gave you something last). */
   getWidgetPerson(): Promise<string | null>;
   setWidgetPerson(id: string | null): Promise<void>;
+  /** The last app version whose "What's new" was shown (null: never). */
+  getWhatsNewSeen(): Promise<string | null>;
+  setWhatsNewSeen(version: string): Promise<void>;
+  /** People whose "added you · Add back" you answered Not now (account ids). */
+  getAddBackDismissed(): Promise<ReadonlySet<string>>;
+  dismissAddBack(id: string): Promise<void>;
   setBackup(patch: Partial<BackupInfo>): Promise<BackupInfo>;
   subscribe(listener: () => void): () => void;
 }
@@ -148,6 +156,28 @@ function createSqliteSettingsRepository(): SettingsRepository {
     },
     async setWidgetPerson(id) {
       await write(KEY_WIDGET_PERSON, id ?? '');
+    },
+    async getWhatsNewSeen() {
+      return (await read(KEY_WHATS_NEW)) || null;
+    },
+    async setWhatsNewSeen(version) {
+      // Quietly: nothing else depends on it, so reminders and widgets needn't rebuild.
+      const db = await getDb();
+      await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', KEY_WHATS_NEW, version);
+    },
+    async getAddBackDismissed() {
+      try {
+        const ids: unknown = JSON.parse((await read(KEY_ADD_BACK_DISMISSED)) || '[]');
+        return new Set(Array.isArray(ids) ? ids.filter((x): x is string => typeof x === 'string') : []);
+      } catch {
+        return new Set<string>();
+      }
+    },
+    async dismissAddBack(id) {
+      const ids = [...(await repo.getAddBackDismissed()), id].slice(-200);
+      // Quietly, like whatsNewSeen: nothing else depends on it.
+      const db = await getDb();
+      await db.runAsync('INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)', KEY_ADD_BACK_DISMISSED, JSON.stringify([...new Set(ids)]));
     },
     async setBackup(patch) {
       const db = await getDb();

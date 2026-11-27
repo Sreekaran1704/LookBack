@@ -1,7 +1,7 @@
 import DateTimePicker from '@react-native-community/datetimepicker';
 import { router } from 'expo-router';
 import { useEffect, useState, type ReactNode } from 'react';
-import { Alert, KeyboardAvoidingView, Platform, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
+import { Alert, KeyboardAvoidingView, Platform, StyleSheet, Text, TextInput, View } from 'react-native';
 import Animated, { useReducedMotion } from 'react-native-reanimated';
 import { stepIn, stepOut } from '../components/transitions';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -9,6 +9,7 @@ import { PillButton } from '../components/Buttons';
 import { ActionBar, type BarAction } from '../components/Screen';
 import { SlideSwitch } from '../components/Hardware';
 import { PaperPicker } from '../components/Pickers';
+import { PortraitBuddy, usePortraitFace, usePortraitHop } from '../components/PortraitBuddy';
 import { PortraitChoices } from '../components/PortraitChoices';
 import { Buddy } from '../components/scrapbook/Buddy';
 import { FilmPortrait } from '../components/scrapbook/FilmPortrait';
@@ -59,6 +60,14 @@ export default function WelcomeScreen() {
   // Your portrait while you make it; until the first change, the saved one (or the one your name would give you).
   const [portraitEdits, setPortrait] = useState<Portrait | null>(null);
   const portrait = portraitEdits ?? portraitFor(profile?.portrait, name.trim());
+  // Scroll the choices and the little you hops out of the film to the bottom right, pulling faces as you change things.
+  const { filmRef, onScroll, out, reset: resetHop } = usePortraitHop();
+  const { face } = usePortraitFace(portrait);
+  useEffect(() => {
+    resetHop();
+    // Each step starts at its top, with the film.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [current]);
 
   const next = () => {
     if (current === 'name') settingsRepository.setProfile({ name: name.trim() }).catch(() => undefined);
@@ -107,7 +116,8 @@ export default function WelcomeScreen() {
           <View style={{ width: sizes.circleButton }} />
         </View>
 
-        <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1, padding: spacing.gutter, paddingBottom: insets.bottom + spacing.xl }}>
+        <View style={{ flex: 1 }}>
+        <Animated.ScrollView keyboardShouldPersistTaps="handled" onScroll={onScroll} scrollEventThrottle={16} contentContainerStyle={{ flexGrow: 1, padding: spacing.gutter, paddingBottom: insets.bottom + spacing.xl }}>
           <Animated.View key={current} entering={entering} exiting={exiting} style={{ flex: 1, gap: spacing.xl }}>
             {current === 'portrait' ? null : (
               <View style={{ alignItems: 'center' }}>
@@ -144,9 +154,9 @@ export default function WelcomeScreen() {
 
             {current === 'portrait' ? (
               <Page title="And what do you look like?" body="Make a little portrait of yourself. It goes with the pages you give, so your people know they're from you. Change it any time on You.">
-                <View style={{ alignItems: 'center' }}>
-                  <FilmPortrait portrait={portrait} size={PORTRAIT_H} hole={colors.desk} />
-                </View>
+                <Animated.View ref={filmRef} collapsable={false} style={{ alignSelf: 'center' }}>
+                  <FilmPortrait portrait={portrait} size={PORTRAIT_H} hole={colors.desk} face={face} />
+                </Animated.View>
                 <PortraitChoices value={portrait} onChange={setPortrait} />
               </Page>
             ) : null}
@@ -162,7 +172,9 @@ export default function WelcomeScreen() {
               </Page>
             ) : null}
           </Animated.View>
-        </ScrollView>
+        </Animated.ScrollView>
+        {current === 'portrait' ? <PortraitBuddy portrait={portrait} out={out} /> : null}
+        </View>
         {/* Back and the step's own way on, at the foot where a thumb reaches them, riding up with the keyboard. */}
         {barActions.length > 0 ? <ActionBar withNavBar={false} actions={barActions} /> : null}
       </KeyboardAvoidingView>

@@ -113,6 +113,8 @@ interface PageHeaderProps {
   bump?: number | string;
   /** Kept for callers (the bunny used to peek over a wall here). */
   wall?: boolean;
+  /** Something of the page's own at the top right beside the title instead of the bunny (a chat's portrait). */
+  emblem?: ReactNode;
   /** Buttons above the title (back, close, actions), in a `TopBar` row. */
   left?: ReactNode;
   right?: ReactNode;
@@ -122,7 +124,7 @@ interface PageHeaderProps {
  * The top of every page, built the same way everywhere: an optional row of buttons, then the gilt title (with
  * its count), one printed line under it, and the diary's emblem on the right, as tall as the title block.
  */
-export function PageHeader({ title, count, subtitle, buddy = true, buddyMood = 'happy', bump, left, right }: PageHeaderProps) {
+export function PageHeader({ title, count, subtitle, buddy = true, buddyMood = 'happy', bump, left, right, emblem: own }: PageHeaderProps) {
   const { colors, typography, spacing, sizes } = useTheme();
   const [textH, setTextH] = useState(0);
   const onTextLayout = (e: LayoutChangeEvent) => {
@@ -140,7 +142,7 @@ export function PageHeader({ title, count, subtitle, buddy = true, buddyMood = '
           {/* Full width, so Android never under-measures a shrink-wrapped label. */}
           {line ? <Text style={[typography.caption, { color: colors.onDeskMuted, marginTop: spacing.xs, fontSize: (typography.caption.fontSize ?? 17) + 1 }]}>{line}</Text> : null}
         </View>
-        {buddy && emblem > 0 ? <Buddy mood={buddyMood === 'peek' ? 'happy' : buddyMood} size={emblem} bump={bump} tappable /> : null}
+        {own ?? (buddy && emblem > 0 ? <Buddy mood={buddyMood === 'peek' ? 'happy' : buddyMood} size={emblem} bump={bump} tappable /> : null)}
       </View>
     </View>
   );

@@ -64,6 +64,44 @@ export const PORTRAIT_SECTIONS: readonly { part: PortraitPart; label: string; sw
   { part: 'film', label: 'Film' },
 ];
 
+/**
+ * The maker's tabs, so it's a few short lists instead of one long one: each holds some of PORTRAIT_SECTIONS, in order.
+ */
+export const PORTRAIT_TABS: readonly { key: string; label: string; parts: readonly PortraitPart[] }[] = [
+  { key: 'face', label: 'Face', parts: ['skin', 'face', 'build', 'nose', 'mouth', 'blush'] },
+  { key: 'eyes', label: 'Eyes', parts: ['eyes', 'eyeColor', 'lashes', 'brows'] },
+  { key: 'hair', label: 'Hair', parts: ['hair', 'hairColor', 'beard', 'cover'] },
+  { key: 'style', label: 'Style', parts: ['top', 'topColor', 'accessory', 'film'] },
+];
+
+/**
+ * A passing face the little portrait pulls when you change something: `wow` (round mouth, eyebrows up), `wink`,
+ * `joy` (eyes closed in a smile), `blink`. Drawn over the chosen eyes / mouth for a moment, never saved.
+ */
+export type PortraitExpression = 'wow' | 'wink' | 'joy' | 'blink';
+
+/** Which parts differ between two portraits. */
+export function changedParts(a: Portrait, b: Portrait): PortraitPart[] {
+  return PART_KEYS.filter((k) => a[k] !== b[k]);
+}
+
+/**
+ * How the portrait reacts to a change: a new look all at once (Surprise) or new hair / head covering → wow; eyes,
+ * lashes, brows → a wink; clothes, accessory, film, skin, face → joy; a new mouth → none (so you see the mouth you
+ * picked), anything else → a blink. Null when nothing changed.
+ */
+export function reactionTo(before: Portrait, after: Portrait): PortraitExpression | null {
+  const parts = changedParts(before, after);
+  if (parts.length === 0) return null;
+  if (parts.length > 2) return 'wow';
+  const part = parts[0]!;
+  if (part === 'mouth') return null;
+  if (part === 'hair' || part === 'hairColor' || part === 'cover') return 'wow';
+  if (part === 'eyes' || part === 'eyeColor' || part === 'lashes' || part === 'brows') return 'wink';
+  if (part === 'top' || part === 'topColor' || part === 'accessory' || part === 'film' || part === 'skin' || part === 'face' || part === 'blush') return 'joy';
+  return 'blink';
+}
+
 const CODE_PREFIX = 'p';
 const RADIX = 36;
 /** The film a default portrait is shot on (warm colour reads best at list size). */

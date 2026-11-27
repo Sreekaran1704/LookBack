@@ -36,7 +36,7 @@ const NavBarContext = createContext<NavBarState>({ action: null, setAction: () =
  */
 /** How far the fade under the phone's own buttons reaches up into the page. */
 const FADE_ABOVE = 18;
-const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/', '/letter', '/settings', '/portrait', '/person/'];
+const HIDDEN_ON = ['/entry', '/welcome', '/memory/', '/year/', '/letter', '/settings', '/portrait', '/person/', '/friend/'];
 
 export function NavBarProvider({ children }: { children: ReactNode }) {
   const [action, setAction] = useState<NavAction | null>(null);
@@ -104,7 +104,7 @@ export function useHomeTopRequest(scrollToTop: () => void) {
 const PAGES = [
   { path: '/', label: 'Home', icon: 'home-outline' },
   { path: '/years', label: 'Years', icon: 'library-outline' },
-  { path: '/shared', label: 'Shared', icon: 'mail-outline' },
+  { path: '/shared', label: 'Chat', icon: 'chatbubbles-outline' },
   { path: '/you', label: 'You', icon: 'person-circle-outline' },
 ] as const;
 /** The round Write button sits in the middle of the bar, before this page. */

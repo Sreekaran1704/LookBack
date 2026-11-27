@@ -6,13 +6,15 @@ import { AppState } from 'react-native';
 import { RTCPeerConnection, RTCSessionDescription } from 'react-native-webrtc';
 import type { RealtimeChannel } from '@supabase/supabase-js';
 import { formatDisplayDate } from '../../lib/dates';
-import { GIFT_CHUNK, GiftAssembler, hasCandidate, trustKnock, withCandidates, parseHeader, parseSignal, type GiftHeader, type Knock, type SdpNote, type Signal } from '../../lib/giftProtocol';
-import { verifyHandshake } from '../../lib/identity';
-import { packPage, parseMailPath, readEnvelope, unpackPage } from '../../lib/mailbox';
+import { historySince, packGot } from '../../lib/friendship';
+import { CHAT_BOX_MAX, GIFT_CHUNK, GiftAssembler, hasCandidate, helloBack, offerAddBack, sealAfterMs, trustKnock, withCandidates, parseHeader, parseSignal, type GiftHeader, type Hello, type Knock, type SdpNote, type Signal } from '../../lib/giftProtocol';
+import { fromBase64Url, toBase64Url, verifyHandshake } from '../../lib/identity';
+import { isChat, packChat, unpackChat, type ChatMessage } from '../../lib/chat';
+import { mailExpired, mailPath, packPage, parseMailPath, readEnvelope, unpackPage } from '../../lib/mailbox';
 import { PAGES_CHANNEL_ID } from '../../notifications/scheduler';
 import { entriesRepository } from '../entriesRepository';
 import { settingsRepository } from '../settingsRepository';
-import { sharingRepository, type OutboxItem } from '../sharingRepository';
+import { sharingRepository, type ChatRow, type OutboxItem } from '../sharingRepository';
 import { socialClient } from './client';
 import { alertPerson, registerForAlerts } from './alerts';
 import { myPublicKey, openForMe, sealForThem, signMine } from './keys';
@@ -43,11 +45,16 @@ let relayLoading: Promise<void> | null = null;
 const RELAY_REFRESH_MS = 60 * 60 * 1000;
 /** Don't hold a page up for the relay's login longer than this. */
 const RELAY_WAIT_MS = 2500;
+/** No relay set up (or it didn't answer): don't ask again for this long, so pages don't wait on it every time. */
+const RELAY_NONE_MS = 15 * 60_000;
+let relayAskedAt = 0;
 
 /** Makes sure the relay's login is fresh (fetched at most every few hours; never throws, never waits long). */
 function ensureRelay(): Promise<void> {
   if (Date.now() < relayUntil - RELAY_REFRESH_MS || !socialClient) return Promise.resolve();
+  if (!relayLoading && relayUntil === 0 && Date.now() - relayAskedAt < RELAY_NONE_MS) return Promise.resolve();
   relayLoading ??= (async () => {
+    relayAskedAt = Date.now();
     try {
       const { data, error } = await socialClient.functions.invoke<{ iceServers?: IceServer[]; ttl?: number }>('turn', { body: {} });
       if (error || !data?.iceServers?.length) return;
@@ -63,13 +70,13 @@ function ensureRelay(): Promise<void> {
 }
 /** Local addresses come at once, the internet address within a second or two; this caps a slow network. */
 const GATHER_MS = 2500;
+/** With only local addresses so far, go after this long (same Wi-Fi needs nothing more). */
+const LOCAL_ONLY_MS = 1200;
 /** No progress for this long and the gift is given up (and retried). */
 const STALL_MS = 30_000;
 /** Pause sending while this much is still queued on the channel, until it drains below the low mark. */
 const BUFFER_HIGH = 1024 * 1024;
 const BUFFER_LOW = 256 * 1024;
-/** How long a knock waits for an answer before the other phone is taken to be closed (and gets an alert). */
-const ANSWER_WAIT_MS = 4000;
 /** When a gift that didn't go tries again (after that: when they say hello, the app opens, or the network changes). */
 const RETRY_MS = [5000, 15_000, 60_000];
 /** A knock nobody answered is forgotten after this long on the receiver's screen. */
@@ -105,6 +112,8 @@ const listeners = new Set<() => void>();
 const alerted = new Set<string>();
 const attempts = new Map<string, number>();
 const retryTimers = new Map<string, ReturnType<typeof setTimeout>>();
+/** Gifts whose knock the other phone said it heard (`seen`): its person is looking at the question. */
+const heardKnock = new Set<string>();
 
 function changed() {
   for (const l of listeners) l();
@@ -116,6 +125,10 @@ export function subscribePostman(listener: () => void): () => void {
 }
 export function outgoingState(giftId: string): GiftState | null {
   return outgoing.get(giftId)?.state ?? null;
+}
+/** Their phone heard the knock and is asking them (so it's worth waiting for their Accept). */
+export function outgoingHeard(giftId: string): boolean {
+  return heardKnock.has(giftId);
 }
 export function outgoingProblem(giftId: string): GiftProblem | null {
   return outgoing.get(giftId)?.problem ?? null;
@@ -131,6 +144,9 @@ export function incomingGifts(): IncomingGift[] {
 }
 function setOutgoing(gift: string, personId: string, state: GiftState, problem: GiftProblem | null = null) {
   outgoing.set(gift, { state, personId, problem });
+  // Remembered for their page in Shared: what you gave them and how it went.
+  const record = ({ mailed: 'sealed', sent: 'kept', declined: 'declined' } as const)[state as 'mailed' | 'sent' | 'declined'];
+  if (record) void sharingRepository.setGiven(gift, record).catch(() => undefined);
   if (state === 'sent' || state === 'declined' || state === 'mailed') {
     attempts.delete(gift);
     clearTimeout(retryTimers.get(gift));
@@ -222,6 +238,7 @@ async function openInbox(): Promise<void> {
   await stopPostman();
   me = id;
   void warmUp();
+  void loadRequests();
   await socialClient.realtime.setAuth();
   // Any channel left on this topic (from a socket that reconnected) goes first.
   for (const c of socialClient.getChannels()) if (c.topic.endsWith(`inbox:${id}`)) await socialClient.removeChannel(c);
@@ -232,6 +249,8 @@ async function openInbox(): Promise<void> {
       if (status !== 'SUBSCRIBED') return;
       // Pick up anything sealed for you first, then say hello (so your people hear "had" for what you just kept).
       void collectMail().finally(() => void sayHello());
+      // Pages of yours that have waited sealed for a week come off the server.
+      void takeBackOldMail();
       // Where alerts can reach this phone while LookBack is closed.
       void registerForAlerts().catch(() => undefined);
     });
@@ -249,14 +268,20 @@ export async function stopPostman(): Promise<void> {
 /** Tells your people you're here (they send what's waiting for you), and knocks for what's waiting for them. */
 async function sayHello() {
   const people = await sharingRepository.people();
-  await Promise.all(people.map((p) => post(p.id, { t: 'here' }).catch(() => undefined)));
+  // With who you are (so someone who hasn't added you back can), whether you count them as a friend yet, when you last
+  // removed them, and the pages you got from them (see helloFor).
+  await Promise.all(people.map(async (p) => post(p.id, { t: 'here', ...(await helloFor(p.id)) }).catch(() => undefined)));
   await deliverWaiting();
+  await deliverChats();
 }
 /** Knocks for every gift still waiting in the outbox (or only those for one person, or one gift). */
 export async function deliverWaiting(personId?: string, giftId?: string): Promise<void> {
   if (!me) return;
+  const friends = new Set((await sharingRepository.people()).filter((p) => p.friends).map((p) => p.id));
   for (const item of await sharingRepository.outbox()) {
     if (personId && item.personId !== personId) continue;
+    // Pages only go between friends: this one waits until they've added you back.
+    if (!friends.has(item.personId)) continue;
     if (giftId && item.id !== giftId) continue;
     const state = outgoing.get(item.id)?.state;
     if (state === 'connecting' || state === 'sending') continue;
@@ -270,9 +295,12 @@ export async function deliverWaiting(personId?: string, giftId?: string): Promis
 }
 /** Gives a memory to someone: queued on this phone, and offered to them right away if they're online. */
 export async function giveMemory(entryId: string, personId: string): Promise<string> {
+  const person = await sharingRepository.person(personId);
+  if (!person?.friends) throw new Error(`${person?.name ?? 'They'} hasn't added you back yet. Once they do, you can give them pages.`);
   // Giving the same page to the same person again: it's the one already waiting (offered again now), not another copy.
   const waiting = (await sharingRepository.outbox()).find((o) => o.entryId === entryId && o.personId === personId);
-  const gift = waiting?.id ?? (await sharingRepository.queue(entryId, personId));
+  const date = (await entriesRepository.getAll()).find((e) => e.id === entryId)?.localDate ?? null;
+  const gift = waiting?.id ?? (await sharingRepository.queue(entryId, personId, date));
   alerted.delete(gift);
   attempts.delete(gift);
   const item = waiting ?? (await sharingRepository.outbox()).find((o) => o.id === gift);
@@ -298,7 +326,8 @@ async function knock(item: OutboxItem) {
     }
     throw e;
   }
-  setTimeout(() => {
+  heardKnock.delete(item.id);
+  const unanswered = () => {
     if (outgoing.get(item.id)?.state !== 'knocking') return;
     // No answer: try again shortly, and (once per gift) send an alert, like Blip's: their LookBack is probably closed.
     scheduleRetry(item.id);
@@ -307,7 +336,149 @@ async function knock(item: OutboxItem) {
     if (alerted.has(item.id)) return;
     alerted.add(item.id);
     void alertPerson(item.personId, name || 'Someone').catch(() => undefined);
-  }, ANSWER_WAIT_MS);
+  };
+  const unheard = sealAfterMs(false);
+  setTimeout(() => {
+    if (outgoing.get(item.id)?.state !== 'knocking') return;
+    // Their phone heard it and they're deciding: give them time to tap Accept before sealing it instead.
+    if (heardKnock.has(item.id)) setTimeout(unanswered, sealAfterMs(true) - unheard);
+    else unanswered();
+  }, unheard);
+}
+
+/**
+ * The mailbox only holds a page for a while: an envelope of yours that has waited a week (lib/mailbox.ts MAIL_KEEP_MS)
+ * is taken back off the server, and the page goes directly the next time you're both online.
+ */
+async function takeBackOldMail(): Promise<void> {
+  if (!me) return;
+  const now = Date.now();
+  for (const g of await sharingRepository.given()) {
+    if (g.state !== 'sealed' || !mailExpired(g.givenAt, now)) continue;
+    try {
+      await removeEnvelope(mailPath(g.personId, me, g.id));
+      await sharingRepository.setGiven(g.id, 'returned');
+      if (outgoing.get(g.id)?.state === 'mailed') outgoing.delete(g.id);
+    } catch {
+      // Try again next time.
+    }
+  }  // Messages too: a week sealed and unread comes off the server; it goes when you're both online.
+  for (const m of await sharingRepository.undelivered().catch(() => [] as ChatRow[])) {
+    if (m.state !== 'sent' || !mailExpired(m.at, now)) continue;
+    try {
+      await removeEnvelope(mailPath(m.personId, me, m.id));
+      await sharingRepository.setMessageState(m.id, 'returned');
+    } catch {
+      // Try again next time.
+    }
+  }
+}
+
+/** Your name and phone key, for hellos and "added you". */
+async function whoIAm(): Promise<{ name: string; key: string }> {
+  const { name } = await settingsRepository.getProfile();
+  return { name: name || 'Someone', key: await myPublicKey() };
+}
+
+/**
+ * Everything a hello or "added you" tells one person: who you are, whether you count them as a friend (`f`), when you
+ * last removed them (`c`, lib/friendship.ts), and the pages you got from them (`got`, so their phone can list what it
+ * gave you, even pages it gave before it kept a list).
+ */
+async function helloFor(personId: string): Promise<Record<string, unknown>> {
+  const id = personId.toLowerCase();
+  const person = await sharingRepository.person(id);
+  const mine = await sharingRepository.myCut(id);
+  const since = historySince(mine, person?.theirCut);
+  const got = (await sharingRepository.letters()).filter((l) => l.senderId === id).map((l) => ({ gift: l.id, date: l.memoryDate, at: l.receivedAt }));
+  return { ...(await whoIAm()), f: !!person?.friends, c: mine, got: packGot(got, since) };
+}
+
+/**
+ * What a hello from someone you have changes: when they last removed you; if you've both removed each other, the
+ * pages from before are deleted; and the pages they got from you go on your list of what you gave them.
+ */
+async function applyHello(note: Hello) {
+  if (note.cut !== undefined) await sharingRepository.setTheirCut(note.from, note.cut);
+  const person = await sharingRepository.person(note.from);
+  const since = historySince(person?.myCut, person?.theirCut);
+  if (since) await sharingRepository.purgeHistory(note.from, since);
+  if (!note.got.length) return;
+  const known = new Set((await sharingRepository.given(note.from)).map((g) => g.id));
+  const entries = await entriesRepository.getAll();
+  for (const g of note.got) {
+    if (known.has(g.gift) || (since && g.at < since)) continue;
+    // One page per day: the entry for that day is the one you gave (if it's still in your diary).
+    const entry = entries.find((e) => e.localDate === g.date);
+    await sharingRepository.restoreGiven({ id: g.gift, entryId: entry?.id ?? '', personId: note.from, memoryDate: g.date, givenAt: g.at, state: 'kept' });
+  }
+}
+
+/**
+ * Adds someone to your people and tells their phone, so they can add you back in one tap (if their LookBack is open;
+ * otherwise they hear it with your next hello). Use this wherever a person adds someone (scan, nearby, link).
+ */
+export async function addPersonAndTell(id: string, name: string, key: string | null = null, trust: 'scanned' | 'learned' = 'learned'): Promise<void> {
+  const known = await sharingRepository.person(id);
+  await sharingRepository.addPerson(id, name, key, trust);
+  // They asked first ("added you"), so adding them back makes you friends at once.
+  const theyHaveYou = addBackOffers.has(id.toLowerCase());
+  addBackOffers.delete(id.toLowerCase());
+  await sharingRepository.removeRequest(id).catch(() => undefined);
+  if (theyHaveYou) await sharingRepository.markFriends(id);
+  changed();
+  if (!me) return;
+  if (!known || theyHaveYou) await post(id.toLowerCase(), { t: 'added', ...(await helloFor(id)) }).catch(() => undefined);
+  // Anything they left sealed for you while you weren't friends can be picked up now.
+  if (theyHaveYou) void collectMail();
+}
+
+/** Reminds someone you added (who hasn't added you back) that you'd like to be friends: their "Add back" again. */
+export async function remindToAddBack(id: string): Promise<void> {
+  if (!me) throw new Error('Sign in to give memories.');
+  await post(id.toLowerCase(), { t: 'added', ...(await helloFor(id)) });
+}
+
+/** People who added you (or said hello) but aren't among your people yet: "Asha added you · Add back". */
+const addBackOffers = new Map<string, { id: string; name: string; key: string | null; at: number }>();
+export function addBackRequests(): { id: string; name: string; key: string | null; at: number }[] {
+  return [...addBackOffers.values()].sort((a, b) => a.at - b.at);
+}
+export async function addBack(id: string): Promise<void> {
+  const offer = addBackOffers.get(id);
+  if (!offer) return;
+  // Their key came over the relay, not from their code: learned, so a scanned one later still wins.
+  await addPersonAndTell(offer.id, offer.name, offer.key, 'learned');
+}
+export async function notNowAddBack(id: string): Promise<void> {
+  addBackOffers.delete(id);
+  await sharingRepository.removeRequest(id).catch(() => undefined);
+  changed();
+  await settingsRepository.dismissAddBack(id);
+}
+/** Friend requests survive a restart: loaded into the list when the postman starts. */
+async function loadRequests() {
+  for (const r of await sharingRepository.requests().catch(() => [])) if (!addBackOffers.has(r.id)) addBackOffers.set(r.id, r);
+  changed();
+}
+
+async function heardHello(note: Hello) {
+  const known = !!(await sharingRepository.person(note.from));
+  // A hello or "added you" from someone you have: they have you too, so you're friends. If that's news, say hello
+  // back once, so their phone knows as well (it stops there: the next hello finds you already friends).
+  if (known) {
+    const newly = await sharingRepository.markFriends(note.from);
+    await applyHello(note);
+    // They've just added you (again, perhaps), or don't know yet that you have them: tell them, once.
+    if (helloBack(newly, note) || note.t === 'added') await post(note.from, { t: 'here', ...(await helloFor(note.from)), f: true }).catch(() => undefined);
+    if (newly) void collectMail();
+    return;
+  }
+  if (!offerAddBack(note, known, await settingsRepository.getAddBackDismissed())) return;
+  if (addBackOffers.has(note.from)) return;
+  addBackOffers.set(note.from, { id: note.from, name: note.name ?? 'Someone', key: note.key, at: Date.now() });
+  await sharingRepository.addRequest({ id: note.from, name: note.name ?? 'Someone', key: note.key }).catch(() => undefined);
+  changed();
 }
 
 /** Accept a gift: they connect to you and send it. */
@@ -382,7 +553,23 @@ async function hear(raw: unknown) {
 async function handle(note: Signal) {
   switch (note.t) {
     case 'here':
+      await heardHello(note);
       await deliverWaiting(note.from);
+      await deliverChats(note.from);
+      return;
+    case 'msg':
+      await heardChat(note.from, note.gift, note.box);
+      return;
+    case 'got':
+      await sharingRepository.setMessageState(note.gift, 'delivered');
+      return;
+    case 'added':
+      await heardHello(note);
+      return;
+    case 'seen':
+      if (outgoing.get(note.gift)?.state !== 'knocking' || outgoing.get(note.gift)?.personId !== note.from) return;
+      heardKnock.add(note.gift);
+      changed();
       return;
     case 'mail':
       await collectMail();
@@ -402,13 +589,26 @@ async function handle(note: Signal) {
       if ([...incoming.values()].some((g) => g.from === note.from && g.date === note.date && (g.state === 'waiting' || g.state === 'receiving'))) return;
       // Someone you already know shows under the name you know them by, and must come from the phone you know.
       const friend = await sharingRepository.person(note.from);
+      // Pages only come from friends: from someone you haven't added, it's an "add them back?" first, not a page.
+      if (!friend) {
+        await heardHello({ t: 'added', from: note.from, name: note.name, key: note.key, friend: null, got: [] });
+        return;
+      }
+      // They knocked, so they have you: you're friends.
+      await sharingRepository.markFriends(note.from);
       // Pages from your people (whose phone you know) come in by themselves, like Blip: decided before anything shows,
       // so no question flashes up.
       const { changed: keyChanged, auto, expectedKey } = trustKnock(friend?.publicKey, note.key, await settingsRepository.getAutoAccept());
       incomingKeys.set(note.gift, expectedKey);
       incoming.set(note.gift, { ...note, name: friend?.name ?? note.name, at: Date.now(), state: 'waiting', progress: 0, changed: keyChanged, problem: keyChanged ? 'changed' : null });
       if (auto) await acceptGift(note.gift).catch(() => undefined);
-      else changed();
+      else {
+        changed();
+        // Tell the giver you're being asked, so they wait for your answer instead of sealing it after a few seconds.
+        if (!keyChanged) await post(note.from, { t: 'seen', gift: note.gift }).catch(() => undefined);
+        // Get the connection ready while they decide, so Accept starts at once.
+        void warmUp();
+      }
       return;
     }
     case 'yes': {
@@ -522,9 +722,26 @@ class Session {
     this.timer = setTimeout(() => this.fail('unreachable'), STALL_MS);
   }
 
+  /**
+   * Waits until there are enough addresses to meet the other phone, not for every last one ("complete" can take the
+   * whole cap): an internet address (and the relay's, when there is a relay) is enough at once; local ones alone are
+   * enough after a moment (same Wi-Fi); never longer than GATHER_MS.
+   */
+  private async enoughAddresses(): Promise<void> {
+    const started = Date.now();
+    const relay = iceServers.length > 1;
+    const done = gathered(this.pc, GATHER_MS).then(() => true);
+    while (Date.now() - started < GATHER_MS) {
+      const has = (typ: string) => this.found.some((c) => c.includes(` typ ${typ}`));
+      if (has('srflx') && (!relay || has('relay'))) return;
+      if (this.found.length > 0 && Date.now() - started >= LOCAL_ONLY_MS && !relay) return;
+      if (await Promise.race([done, new Promise<false>((r) => setTimeout(() => r(false), 50))])) return;
+    }
+  }
+
   /** Our side of the connection, with every address found, signed with this phone's key. */
   private async describe(type: 'offer' | 'answer'): Promise<boolean> {
-    await gathered(this.pc, GATHER_MS);
+    await this.enoughAddresses();
     let sdp = withCandidates(this.pc.localDescription?.sdp ?? '', this.found);
     // None found yet (the networks were still waking up): the giver looks again, twice, before calling it offline.
     for (let again = 0; again < 2 && !hasCandidate(sdp) && type === 'offer' && !this.done; again++) {
@@ -795,6 +1012,13 @@ async function mailGift(item: OutboxItem): Promise<boolean> {
   if (state === 'sent' || state === 'declined' || state === 'connecting' || state === 'sending' || state === 'mailed') return false;
   const person = await sharingRepository.person(item.personId);
   if (!person?.publicKey) return false;
+  // Sealed once already (before a restart): it's still in their box. Taken back after a week: it only goes directly now.
+  const before = (await sharingRepository.given(item.personId)).find((g) => g.id === item.id)?.state;
+  if (before === 'sealed') {
+    setOutgoing(item.id, item.personId, 'mailed');
+    return true;
+  }
+  if (before === 'returned') return false;
   mailing.add(item.id);
   try {
     const built = await pageFor(item);
@@ -864,10 +1088,21 @@ async function takeEnvelope(path: string) {
     return;
   }
   const friend = await sharingRepository.person(at.from);
-  const trust = trustKnock(friend?.publicKey, env.head.key, await settingsRepository.getAutoAccept());
+  // From someone you haven't added: it stays sealed in your box until you add them back (then it's picked up).
+  if (!friend) return;
+  await sharingRepository.markFriends(at.from);
+  const trust = trustKnock(friend.publicKey, env.head.key, await settingsRepository.getAutoAccept());
   // Not from the phone you know for them: left unopened until you scan their code again.
   if (trust.changed) return;
   const bytes = await openForMe({ head: env.head, sealed: env.sealed, me, senderKey: trust.expectedKey ?? env.head.key });
+  // A chat message (text, voice or a reaction) left sealed for you: keep it, throw the envelope away, tick it.
+  if (bytes && isChat(bytes)) {
+    const opened = unpackChat(bytes, at.gift);
+    if (opened) await keepChat(at.from, opened.message, opened.audio);
+    await removeEnvelope(path).catch(() => undefined);
+    if (opened) await post(at.from, { t: 'got', gift: at.gift }).catch(() => undefined);
+    return;
+  }
   const page = bytes ? unpackPage(bytes, at.gift) : null;
   if (!page) {
     await removeEnvelope(path).catch(() => undefined);
@@ -938,3 +1173,187 @@ AppState.addEventListener('change', (state) => {
 Network.addNetworkStateListener(({ isConnected }) => {
   if (isConnected && AppState.currentState === 'active') retryAll();
 });
+
+// ---- chat (lib/chat.ts): messages and reactions between friends, sealed for the other phone
+
+/** A sealed message waits this long for its tick before it goes into their mailbox instead. */
+const CHAT_GOT_WAIT_MS = 5000;
+
+export type ChatInput =
+  | { kind: 'text'; text: string }
+  | { kind: 'voice'; uri: string; ms: number; wave: number[] }
+  | { kind: 'react'; target: string; emoji: string }
+  | { kind: 'read'; ids: string[] }
+  | { kind: 'unsend'; target: string };
+
+/** Sends a message or reaction to a friend: kept here at once, then sealed and sent (or left in their mailbox). */
+export async function sendChat(personId: string, input: ChatInput): Promise<void> {
+  const person = await sharingRepository.person(personId);
+  if (!person?.friends) throw new Error(`${person?.name ?? 'They'} hasn't added you back yet.`);
+  const id = Crypto.randomUUID();
+  const at = new Date().toISOString();
+  const base = { id, personId: person.id, mine: true, voicePath: null, voiceMs: null, voiceWave: null, at, state: 'sending' as const };
+  let row: ChatRow;
+  if (input.kind === 'text') {
+    const text = input.text.trim();
+    if (!text) return;
+    row = { ...base, kind: 'text', body: text.slice(0, 2000) };
+  } else if (input.kind === 'voice') {
+    // The recording moves into chat/ so it stays with the message.
+    const ext = input.uri.split('.').pop()?.toLowerCase() || 'm4a';
+    const target = sharingRepository.chatFile(id, ext);
+    new File(input.uri).copy(target.file);
+    row = { ...base, kind: 'voice', body: '', voicePath: target.path, voiceMs: Math.round(input.ms), voiceWave: input.wave };
+  } else if (input.kind === 'react') {
+    await sharingRepository.setReaction({ target: input.target, from: 'me', emoji: input.emoji, at });
+    row = { ...base, kind: 'react', body: JSON.stringify({ target: input.target, emoji: input.emoji }) };
+  } else if (input.kind === 'read') {
+    if (!input.ids.length) return;
+    row = { ...base, kind: 'read', body: JSON.stringify(input.ids.slice(0, 200)) };
+  } else {
+    row = { ...base, kind: 'unsend', body: input.target };
+  }
+  await sharingRepository.addMessage(row);
+  void deliverChat(row).catch(() => undefined);
+}
+
+/** Retries your messages that haven't reached their phone (for one person, or everyone). */
+async function deliverChats(personId?: string): Promise<void> {
+  if (!me) return;
+  for (const row of await sharingRepository.undelivered().catch(() => [] as ChatRow[])) {
+    if (personId && row.personId !== personId) continue;
+    // Sealed in their mailbox already: it'll be picked up there.
+    if (row.state === 'sent') continue;
+    await deliverChat(row).catch(() => undefined);
+  }
+}
+
+const chatSending = new Set<string>();
+async function deliverChat(row: ChatRow): Promise<void> {
+  if (!me || chatSending.has(row.id)) return;
+  const person = await sharingRepository.person(row.personId);
+  if (!person?.friends || !person.publicKey) return;
+  chatSending.add(row.id);
+  try {
+    let message: ChatMessage;
+    let audio: Uint8Array | null = null;
+    if (row.kind === 'text') message = { kind: 'text', id: row.id, at: row.at, text: row.body };
+    else if (row.kind === 'read') message = { kind: 'read', id: row.id, at: row.at, ids: JSON.parse(row.body) as string[] };
+    else if (row.kind === 'unsend') message = { kind: 'unsend', id: row.id, at: row.at, target: row.body };
+    else if (row.kind === 'react') {
+      const r = JSON.parse(row.body) as { target: string; emoji: string };
+      message = { kind: 'react', id: row.id, at: row.at, target: r.target, emoji: r.emoji };
+    } else {
+      if (!row.voicePath) return;
+      const f = new File(Paths.document, row.voicePath);
+      if (!f.exists) return;
+      audio = await readAll(f);
+      message = { kind: 'voice', id: row.id, at: row.at, ms: row.voiceMs ?? 0, wave: row.voiceWave ?? [], ext: row.voicePath.split('.').pop() ?? 'm4a' };
+    }
+    const sealed = await sealForThem({ gift: row.id, from: me, to: person.id, recipientKey: person.publicKey, page: packChat(message, audio) });
+    // Taken back after a week in the mailbox: only straight to their phone from now on.
+    const mailboxOk = row.state !== 'returned';
+    if (row.kind !== 'voice' && sealed.length <= CHAT_BOX_MAX) {
+      await post(person.id, { t: 'msg', gift: row.id, box: toBase64Url(sealed) });
+      setTimeout(() => {
+        void (async () => {
+          const now = (await sharingRepository.messages(person.id)).find((m) => m.id === row.id);
+          if (now && (now.state === 'sending' || now.state === 'returned') && mailboxOk) await mailChat(person.id, row.id, sealed);
+        })().catch(() => undefined);
+      }, CHAT_GOT_WAIT_MS);
+    } else if (mailboxOk) {
+      await mailChat(person.id, row.id, sealed);
+    }
+  } finally {
+    chatSending.delete(row.id);
+  }
+}
+
+/** Leaves a sealed message in their mailbox and tells their phone (if it's listening). */
+async function mailChat(to: string, id: string, sealed: Uint8Array) {
+  if (!me) return;
+  await leaveEnvelope(to, me, id, sealed);
+  await sharingRepository.setMessageState(id, 'sent');
+  await post(to, { t: 'mail', gift: id }).catch(() => undefined);
+}
+
+/** A sealed message in a note: only from your people, opened with the key you know for them. */
+async function heardChat(from: string, id: string, box: string) {
+  if (!me) return;
+  const person = await sharingRepository.person(from);
+  if (!person) return;
+  const bytes = fromBase64Url(box);
+  const env = bytes ? readEnvelope(bytes) : null;
+  if (!env || env.head.from !== from || env.head.gift !== id) return;
+  const trust = trustKnock(person.publicKey, env.head.key, true);
+  if (trust.changed) return;
+  const opened = await openForMe({ head: env.head, sealed: env.sealed, me, senderKey: trust.expectedKey ?? env.head.key });
+  const msg = opened ? unpackChat(opened, id) : null;
+  if (!msg) return;
+  // A message from them means they have you: friends.
+  await sharingRepository.markFriends(from);
+  await keepChat(from, msg.message, msg.audio);
+  await post(from, { t: 'got', gift: id }).catch(() => undefined);
+}
+
+/** Keeps a message (or reaction) that arrived, and says so if LookBack isn't in front. */
+async function keepChat(from: string, m: ChatMessage, audio: Uint8Array | null) {
+  if (m.kind === 'react') {
+    await sharingRepository.setReaction({ target: m.target, from, emoji: m.emoji, at: m.at });
+    return;
+  }
+  if (m.kind === 'read') {
+    await sharingRepository.markSeen(from, m.ids);
+    return;
+  }
+  if (m.kind === 'unsend') {
+    // Only their own message, and only on this chat.
+    const target = await sharingRepository.message(m.target);
+    if (target && !target.mine && target.personId === from) await sharingRepository.deleteMessage(m.target);
+    return;
+  }
+  let voicePath: string | null = null;
+  if (m.kind === 'voice' && audio) {
+    const target = sharingRepository.chatFile(m.id, m.ext);
+    target.file.write(audio);
+    voicePath = target.path;
+  }
+  const fresh = await sharingRepository.addMessage({
+    id: m.id,
+    personId: from,
+    mine: false,
+    kind: m.kind,
+    body: m.kind === 'text' ? m.text : '',
+    voicePath,
+    voiceMs: m.kind === 'voice' ? m.ms : null,
+    voiceWave: m.kind === 'voice' ? m.wave : null,
+    at: m.at,
+    state: 'new',
+  });
+  if (!fresh || AppState.currentState === 'active') return;
+  const name = (await sharingRepository.person(from))?.name ?? 'Someone';
+  await Notifications.scheduleNotificationAsync({
+    content: { title: `💬 ${name}`, body: m.kind === 'text' ? m.text.slice(0, 120) : '🎙️ a voice message', data: { kind: 'chat', person: from } },
+    trigger: { channelId: PAGES_CHANNEL_ID },
+  }).catch(() => undefined);
+}
+
+/** You're looking at the chat: their new messages are read, and their phone hears they've been seen. */
+export async function seeChat(personId: string): Promise<void> {
+  const ids = await sharingRepository.markChatRead(personId);
+  if (ids.length && (await sharingRepository.person(personId))?.friends) await sendChat(personId, { kind: 'read', ids }).catch(() => undefined);
+}
+
+/** Delete for me: gone from this phone and (at the next backup) your Drive; they keep their copy. */
+export async function deleteForMe(id: string): Promise<void> {
+  await sharingRepository.deleteMessage(id);
+}
+
+/** Delete for everyone: your message, while they haven't seen it yet, goes from both phones and both Drives. */
+export async function deleteForEveryone(personId: string, id: string): Promise<void> {
+  const m = await sharingRepository.message(id);
+  if (!m || !m.mine) return;
+  if (m.state === 'seen') throw new Error("They've seen it already, so it can only be deleted for you.");
+  await sharingRepository.deleteMessage(id);
+  await sendChat(personId, { kind: 'unsend', target: id });
+}
